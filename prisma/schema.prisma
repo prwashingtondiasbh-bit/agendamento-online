@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id            String          @id @default(uuid())
+  name          String
+  slug          String          @unique
+  phone         String?
+  email         String?
+  address       String?
+  timezone      String          @default("America/Sao_Paulo")
+  currency      String          @default("BRL")
+  openTime      String          @default("09:00")
+  closeTime     String          @default("19:00")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  members       TenantMember[]
+  subscriptions Subscription[]
+  auditLogs     AuditLog[]
+  professionals Professional[]
+  clients       Client[]
+  services      Service[]
+  appointments  Appointment[]
+}
+
+model User {
+  id            String          @id @default(uuid())
+  name          String
+  email         String          @unique
+  passwordHash  String
+  resetToken    String?
+  resetExpires  DateTime?
+  active        Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  memberships   TenantMember[]
+  auditLogs     AuditLog[]
+}
+
+enum Role {
+  SUPER_ADMIN
+  OWNER
+  MANAGER
+  RECEPTIONIST
+  PROFESSIONAL
+}
+
+model TenantMember {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role     @default(PROFESSIONAL)
+  permissions Json?    @default("[]") // Specific permissions array or object
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, userId])
+}
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum SubStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+model Subscription {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan        Plan      @default(FREE)
+  status      SubStatus @default(ACTIVE)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String   // e.g. "APPOINTMENT_CREATE", "USER_LOGIN"
+  details     Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+}
+
+model Professional {
+  id           String         @id @default(uuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  email        String?
+  phone        String?
+  avatarUrl    String?
+  specialty    String         @default("Nail Designer Geral")
+  active       Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  appointments Appointment[]
+}
+
+model Client {
+  id           String         @id @default(uuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  phone        String
+  email        String?
+  notes        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  appointments Appointment[]
+}
+
+model Service {
+  id           String         @id @default(uuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  durationMin  Int            @default(60)
+  price        Decimal        @db.Decimal(10, 2)
+  category     String         @default("Unhas")
+  active       Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  appointments Appointment[]
+}
+
+model Appointment {
+  id             String            @id @default(uuid())
+  tenantId       String
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clientId       String
+  client         Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  professionalId String
+  professional   Professional      @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  serviceId      String
+  service        Service           @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  dateTime       DateTime
+  status         AppointmentStatus @default(CONFIRMED)
+  totalAmount    Decimal           @db.Decimal(10, 2)
+  notes          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}

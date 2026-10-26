@@ -1,0 +1,6 @@
+{
+  "name": "Agenda Beauty",
+  "description": "SaaS profissional de agendamento e gestão para manicures e nail designers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
