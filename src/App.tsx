@@ -16,6 +16,7 @@ import { AdvancedView } from './components/AdvancedView';
 import { PixCheckoutModal } from './components/PixCheckoutModal';
 import { SuperAdminLoginScreen } from './components/auth/SuperAdminLoginScreen';
 import { OwnerLoginScreen } from './components/auth/OwnerLoginScreen';
+import { CustomerLoginScreen } from './components/auth/CustomerLoginScreen';
 import { CustomerPortal } from './components/customer/CustomerPortal';
 import { PublicBookingPage } from './components/PublicBookingPage';
 import { MasterAdminPortal } from './components/MasterAdminPortal';
@@ -637,7 +638,10 @@ export default function App() {
     );
   }
 
-  // 2. Unauthenticated screens (strictly 3 surfaces: Store Page, Salon Owner Login, or Secret Super Admin Login)
+  // 2. Unauthenticated screens:
+  // - /super-admin-secreto -> SuperAdminLoginScreen
+  // - /acesso-lojista -> OwnerLoginScreen
+  // - / (main root URL) -> CustomerLoginScreen
   if (!currentUser) {
     // Secret Super Admin login URL
     if (routeState.isSuperAdminRoute) {
@@ -652,34 +656,33 @@ export default function App() {
       );
     }
 
-    // If unauthenticated on a generic customer route, return to the customer's store page
-    if (routeState.isGenericCustomerRoute) {
-      const savedSlug = typeof window !== 'undefined' ? localStorage.getItem('agenda_last_store_slug') : null;
-      const fallbackSlug = savedSlug || business?.slug || 'agenda-beauty-sp';
+    // Salon Owner / Staff Login (/acesso-lojista)
+    if (routeState.isOwnerRoute) {
       return (
-        <PublicBookingPage
-          slug={fallbackSlug}
-          currentUser={null}
-          onAuthenticated={(user: any) => {
+        <OwnerLoginScreen
+          onLoginSuccess={(user) => {
             setCurrentUser(user);
+            setViewMode('admin');
             fetchData(user?.role);
           }}
-          onGoToCustomerPortal={(subPath?: string) => {
-            setViewMode('customer');
-            navigateTo(`/agendar/${fallbackSlug}/${subPath || 'meus-agendamentos'}`);
-          }}
-          onLogout={handleLogout}
         />
       );
     }
 
-    // Salon Owner / Staff Login (default for / and /acesso-lojista; no public directory or landing page exposed)
+    // Main root URL (/) -> Customer Login Screen
+    const savedSlug = typeof window !== 'undefined' ? localStorage.getItem('agenda_last_store_slug') : null;
+    const defaultSlug = savedSlug || business?.slug || 'agenda-beauty-sp';
     return (
-      <OwnerLoginScreen
-        onLoginSuccess={(user) => {
+      <CustomerLoginScreen
+        defaultSlug={defaultSlug}
+        onLoginSuccess={(user, resolvedSlug) => {
           setCurrentUser(user);
-          setViewMode('admin');
+          setViewMode('customer');
           fetchData(user?.role);
+          navigateTo(`/agendar/${resolvedSlug || defaultSlug}/minha-conta`);
+        }}
+        onOpenStoreBooking={(targetSlug) => {
+          openPublicBooking(targetSlug || defaultSlug);
         }}
       />
     );
