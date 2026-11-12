@@ -255,18 +255,65 @@ function isTransientConnectionError(err: any): boolean {
   );
 }
 
+const SELECT_CACHE_TTL_MS = 4000;
+const selectQueryCache = new Map<string, { expiresAt: number; rows: any }>();
+const inFlightSelectQueries = new Map<string, Promise<any>>();
+let lastCacheInvalidationTime = 0;
+
+export function invalidateQueryCache(): void {
+  selectQueryCache.clear();
+  inFlightSelectQueries.clear();
+  lastCacheInvalidationTime = Date.now();
+}
+
+export function getLastCacheInvalidationTime(): number {
+  return lastCacheInvalidationTime;
+}
+
 function createNewPool(dbUrl: string): mysql.Pool {
   const newPool = mysql.createPool({
     uri: dbUrl,
     waitForConnections: true,
     connectionLimit: 10,
-    maxIdle: 2,
-    idleTimeout: 10000, // close idle connections before Hostinger terminates them
+    maxIdle: 6,
+    idleTimeout: 60000, // keep connections warm for 60s to avoid TCP handshake latency
     queueLimit: 0,
     enableKeepAlive: true,
     keepAliveInitialDelay: 3000,
     connectTimeout: 5000,
   });
+
+  // Intercept pool.execute so any direct write invalidates the SELECT cache immediately
+  const origPoolExecute = newPool.execute.bind(newPool);
+  (newPool as any).execute = async (...args: any[]) => {
+    invalidateQueryCache();
+    const res = await (origPoolExecute as any)(...args);
+    invalidateQueryCache();
+    return res;
+  };
+
+  // Intercept getConnection so transactions/writes on pooled connections also invalidate cache
+  const origGetConnection = newPool.getConnection.bind(newPool);
+  (newPool as any).getConnection = async () => {
+    const conn = await origGetConnection();
+    if (conn && !(conn as any).__cacheWrapped) {
+      (conn as any).__cacheWrapped = true;
+      const origConnExecute = conn.execute.bind(conn);
+      (conn as any).execute = async (...args: any[]) => {
+        invalidateQueryCache();
+        const res = await (origConnExecute as any)(...args);
+        invalidateQueryCache();
+        return res;
+      };
+      const origCommit = conn.commit.bind(conn);
+      (conn as any).commit = async () => {
+        const res = await origCommit();
+        invalidateQueryCache();
+        return res;
+      };
+    }
+    return conn;
+  };
 
   // Enforce strict SQL mode at the session level for every newly opened connection
   const rawCallbackPool = (newPool as any).pool;
@@ -457,6 +504,58 @@ export async function queryWithRetry<T = any>(sql: string, params: any[] = []): 
     throw new Error('MySQL pool unavailable');
   }
 
+  const normalizedSql = sql.trim();
+  const isSelectQuery = normalizedSql.toUpperCase().startsWith('SELECT ') && !isTestEnvironment();
+
+  if (!isSelectQuery) {
+    invalidateQueryCache();
+  } else {
+    const cacheKey = `${normalizedSql}::${JSON.stringify(params)}`;
+    const now = Date.now();
+    const cached = selectQueryCache.get(cacheKey);
+    if (cached && now < cached.expiresAt) {
+      return [cached.rows, []] as any;
+    }
+
+    const inFlight = inFlightSelectQueries.get(cacheKey);
+    if (inFlight) {
+      return (await inFlight) as any;
+    }
+
+    const queryPromise = (async () => {
+      try {
+        const result: any = await p.query(sql, params);
+        selectQueryCache.set(cacheKey, {
+          expiresAt: Date.now() + SELECT_CACHE_TTL_MS,
+          rows: result[0],
+        });
+        return result;
+      } catch (err: any) {
+        if (isTransientConnectionError(err)) {
+          resetPool();
+          const freshPool = getMySqlPool();
+          if (freshPool) {
+            const retryRes: any = await freshPool.query(sql, params);
+            selectQueryCache.set(cacheKey, {
+              expiresAt: Date.now() + SELECT_CACHE_TTL_MS,
+              rows: retryRes[0],
+            });
+            return retryRes;
+          }
+        }
+        if (isStrictPersistenceMode()) {
+          throw new PersistenceUnavailableError(`Erro SQL na leitura em modo estrito: ${err.code || err.message}`);
+        }
+        throw err;
+      } finally {
+        inFlightSelectQueries.delete(cacheKey);
+      }
+    })();
+
+    inFlightSelectQueries.set(cacheKey, queryPromise);
+    return (await queryPromise) as any;
+  }
+
   try {
     return (await p.query(sql, params)) as any;
   } catch (err: any) {
@@ -486,14 +585,20 @@ export async function executeWithRetry<T = any>(sql: string, params: any[] = [])
     throw new Error('MySQL pool unavailable');
   }
 
+  invalidateQueryCache();
+
   try {
-    return (await p.execute(sql, params)) as any;
+    const res = (await p.execute(sql, params)) as any;
+    invalidateQueryCache();
+    return res;
   } catch (err: any) {
     if (isTransientConnectionError(err)) {
       resetPool();
       const freshPool = getMySqlPool();
       if (freshPool) {
-        return (await freshPool.execute(sql, params)) as any;
+        const retryRes = (await freshPool.execute(sql, params)) as any;
+        invalidateQueryCache();
+        return retryRes;
       }
     }
     if (isStrictPersistenceMode()) {

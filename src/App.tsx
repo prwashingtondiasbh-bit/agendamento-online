@@ -177,7 +177,9 @@ export default function App() {
   const [clients, setClients] = useState<Client[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() =>
+    typeof window !== 'undefined' ? Boolean(localStorage.getItem('agenda_token')) : false
+  );
 
   // Modals state
   const [isNewAppointmentOpen, setIsNewAppointmentOpen] = useState(false);
@@ -277,6 +279,13 @@ export default function App() {
   }, [currentUser?.role]);
 
   const checkAuthAndFetchData = useCallback(async () => {
+    const hasSavedToken = typeof window !== 'undefined' && Boolean(localStorage.getItem('agenda_token'));
+    const hasCookie = typeof document !== 'undefined' && document.cookie.includes('agenda_session');
+    if (!hasSavedToken && !hasCookie) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const authRes = await apiFetch('/api/v1/auth/me');
       const authData = await authRes.json().catch(() => ({}));
@@ -289,7 +298,8 @@ export default function App() {
         } else if (u.role === 'CUSTOMER') {
           setViewMode('customer');
         }
-        await fetchData(u.role);
+        setLoading(false);
+        fetchData(u.role);
       } else {
         if (authRes.status === 401) {
           localStorage.removeItem('agenda_token');

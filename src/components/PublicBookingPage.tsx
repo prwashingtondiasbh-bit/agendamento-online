@@ -37,13 +37,22 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
   onGoToCustomerPortal,
   onLogout,
 }) => {
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `agenda_store_cache_${slug}`;
+  const [establishmentData, setEstablishmentData] = useState<any>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = sessionStorage.getItem(cacheKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState<boolean>(() => !establishmentData);
   const [notFoundError, setNotFoundError] = useState<string | null>(null);
-  const [establishmentData, setEstablishmentData] = useState<any>(null);
 
   const storageKey = `agenda_public_draft_${slug}`;
-  const [serviceId, setServiceId] = useState<string>('');
-  const [professionalId, setProfessionalId] = useState<string>('');
+  const [serviceId, setServiceId] = useState<string>(() => establishmentData?.services?.[0]?.id || '');
+  const [professionalId, setProfessionalId] = useState<string>(() => establishmentData?.professionals?.[0]?.id || '');
   const [date, setDate] = useState<string>(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -74,7 +83,9 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
   // Load establishment by slug
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    if (!establishmentData) {
+      setLoading(true);
+    }
     setNotFoundError(null);
 
     fetch(`/api/v1/public/tenants/${encodeURIComponent(slug)}`)
@@ -82,11 +93,16 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
         const json = await res.json();
         if (cancelled) return;
         if (!res.ok || !json.success) {
-          setNotFoundError(json.error || 'Estabelecimento não encontrado.');
+          if (!establishmentData) {
+            setNotFoundError(json.error || 'Estabelecimento não encontrado.');
+          }
           setLoading(false);
           return;
         }
         setEstablishmentData(json.data);
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify(json.data));
+        } catch {}
         const est = json.data?.establishment || json.data?.business;
         const resolvedSlug = est?.slug || slug;
         if (est?.name) {

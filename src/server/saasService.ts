@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { getMySqlPool, queryWithRetry, handleDbFallbackError } from './db/mysql.js';
+import { getMySqlPool, queryWithRetry, handleDbFallbackError, getLastCacheInvalidationTime } from './db/mysql.js';
 import {
   db,
   memoryStore,
@@ -52,6 +52,9 @@ export function slugifyBusinessName(name: string, suffix?: string): string {
     .substring(0, 60) || 'estabelecimento';
   return suffix ? `${base}-${suffix}` : base;
 }
+
+let lastFullSyncTimestamp = 0;
+let syncInFlightPromise: Promise<void> | null = null;
 
 export const saasService = {
   ensureSaaSSeedData() {
@@ -1117,64 +1120,88 @@ export const saasService = {
     const pool = getMySqlPool();
     if (!pool) return;
 
-    const store = memoryStore as any;
-    try {
-      const [rows]: any = await queryWithRetry(`SELECT * FROM Tenant ORDER BY createdAt ASC`);
-      if (Array.isArray(rows) && rows.length > 0) {
-        const syncedTenants: any[] = [];
-        for (const r of rows) {
-          const existing = store.tenants.find((t: any) => t.id === r.id);
-          const merged = {
-            ...(existing || {}),
-            ...r,
-            slug: r.slug || existing?.slug || slugifyBusinessName(r.name),
-            legacySlugs: Array.from(
-              new Set([
-                ...(Array.isArray(existing?.legacySlugs) ? existing.legacySlugs : []),
-                existing?.slug,
-                r.slug,
-                r.id === 'biz-1' ? 'agenda-beauty-sp' : undefined,
-                r.id === 'biz-1' ? 'agenda-beauty' : undefined,
-              ].filter(Boolean).map((s) => String(s).toLowerCase()))
-            ),
-            description: r.description ?? existing?.description ?? '',
-            logoUrl: r.logoUrl ?? existing?.logoUrl ?? '',
-            status: r.status ?? existing?.status ?? 'ACTIVE',
-            isPublished: r.isPublished !== undefined ? Boolean(r.isPublished) : (existing?.isPublished !== false),
-            requireDeposit: r.requireDeposit !== undefined ? Boolean(r.requireDeposit) : (existing?.requireDeposit ?? true),
-            defaultDeposit: Number(r.defaultDeposit ?? existing?.defaultDeposit ?? 30),
-            cancellationHoursLimit: Number(r.cancellationHoursLimit ?? existing?.cancellationHoursLimit ?? 6),
-            allowCustomerReschedule:
-              r.allowCustomerReschedule !== undefined
-                ? Boolean(r.allowCustomerReschedule)
-                : (existing?.allowCustomerReschedule ?? true),
-            allowManualReviewOutOfPeriod:
-              r.allowManualReviewOutOfPeriod !== undefined
-                ? Boolean(r.allowManualReviewOutOfPeriod)
-                : (existing?.allowManualReviewOutOfPeriod ?? true),
-            cancellationPolicyText:
-              r.cancellationPolicyText ?? existing?.cancellationPolicyText ?? DEFAULT_CANCELLATION_POLICY_TEXT,
-            cancellationContactInstructions:
-              r.cancellationContactInstructions ??
-              existing?.cancellationContactInstructions ??
-              DEFAULT_CANCELLATION_CONTACT_INSTRUCTIONS,
-            cancellationPolicyVersion: Number(r.cancellationPolicyVersion ?? existing?.cancellationPolicyVersion ?? 1),
-            enableAdvancedFeatures:
-              r.enableAdvancedFeatures !== undefined
-                ? Boolean(r.enableAdvancedFeatures)
-                : Boolean(existing?.enableAdvancedFeatures),
-          };
-          syncedTenants.push(merged);
-        }
-        store.tenants = syncedTenants;
-        for (const t of store.tenants) {
-          this.getTenantSubscription(t.id);
-        }
-      }
+    const now = Date.now();
+    if (now - lastFullSyncTimestamp < 4000 && lastFullSyncTimestamp >= getLastCacheInvalidationTime()) {
+      return;
+    }
 
-      // Sync Subscriptions from MySQL if table exists
+    if (syncInFlightPromise) {
+      return syncInFlightPromise;
+    }
+
+    syncInFlightPromise = (async () => {
+      const store = memoryStore as any;
       try {
-        const [subRows]: any = await queryWithRetry(`SELECT * FROM Subscription`);
+        const [
+          [rows],
+          [subRows],
+          [userRows],
+          [clientRows],
+          [serviceRows],
+          [profRows],
+          [appRows],
+        ]: any = await Promise.all([
+          queryWithRetry(`SELECT * FROM Tenant ORDER BY createdAt ASC`),
+          queryWithRetry(`SELECT * FROM Subscription`).catch(() => [[]]),
+          queryWithRetry(`SELECT * FROM User`).catch(() => [[]]),
+          queryWithRetry(`SELECT * FROM Client`).catch(() => [[]]),
+          queryWithRetry(`SELECT * FROM Service`).catch(() => [[]]),
+          queryWithRetry(`SELECT * FROM Professional`).catch(() => [[]]),
+          queryWithRetry(`SELECT * FROM Appointment`).catch(() => [[]]),
+        ]);
+
+        if (Array.isArray(rows) && rows.length > 0) {
+          const syncedTenants: any[] = [];
+          for (const r of rows) {
+            const existing = store.tenants.find((t: any) => t.id === r.id);
+            const merged = {
+              ...(existing || {}),
+              ...r,
+              slug: r.slug || existing?.slug || slugifyBusinessName(r.name),
+              legacySlugs: Array.from(
+                new Set([
+                  ...(Array.isArray(existing?.legacySlugs) ? existing.legacySlugs : []),
+                  existing?.slug,
+                  r.slug,
+                  r.id === 'biz-1' ? 'agenda-beauty-sp' : undefined,
+                  r.id === 'biz-1' ? 'agenda-beauty' : undefined,
+                ].filter(Boolean).map((s) => String(s).toLowerCase()))
+              ),
+              description: r.description ?? existing?.description ?? '',
+              logoUrl: r.logoUrl ?? existing?.logoUrl ?? '',
+              status: r.status ?? existing?.status ?? 'ACTIVE',
+              isPublished: r.isPublished !== undefined ? Boolean(r.isPublished) : (existing?.isPublished !== false),
+              requireDeposit: r.requireDeposit !== undefined ? Boolean(r.requireDeposit) : (existing?.requireDeposit ?? true),
+              defaultDeposit: Number(r.defaultDeposit ?? existing?.defaultDeposit ?? 30),
+              cancellationHoursLimit: Number(r.cancellationHoursLimit ?? existing?.cancellationHoursLimit ?? 6),
+              allowCustomerReschedule:
+                r.allowCustomerReschedule !== undefined
+                  ? Boolean(r.allowCustomerReschedule)
+                  : (existing?.allowCustomerReschedule ?? true),
+              allowManualReviewOutOfPeriod:
+                r.allowManualReviewOutOfPeriod !== undefined
+                  ? Boolean(r.allowManualReviewOutOfPeriod)
+                  : (existing?.allowManualReviewOutOfPeriod ?? true),
+              cancellationPolicyText:
+                r.cancellationPolicyText ?? existing?.cancellationPolicyText ?? DEFAULT_CANCELLATION_POLICY_TEXT,
+              cancellationContactInstructions:
+                r.cancellationContactInstructions ??
+                existing?.cancellationContactInstructions ??
+                DEFAULT_CANCELLATION_CONTACT_INSTRUCTIONS,
+              cancellationPolicyVersion: Number(r.cancellationPolicyVersion ?? existing?.cancellationPolicyVersion ?? 1),
+              enableAdvancedFeatures:
+                r.enableAdvancedFeatures !== undefined
+                  ? Boolean(r.enableAdvancedFeatures)
+                  : Boolean(existing?.enableAdvancedFeatures),
+            };
+            syncedTenants.push(merged);
+          }
+          store.tenants = syncedTenants;
+          for (const t of store.tenants) {
+            this.getTenantSubscription(t.id);
+          }
+        }
+
         if (Array.isArray(subRows) && subRows.length > 0) {
           for (const sr of subRows) {
             const existingSub = store.subscriptions.find((s: any) => s.tenantId === sr.tenantId);
@@ -1201,11 +1228,7 @@ export const saasService = {
             }
           }
         }
-      } catch {}
 
-      // Sync Users from MySQL (while preserving Master Admin account)
-      try {
-        const [userRows]: any = await queryWithRetry(`SELECT * FROM User`);
         if (Array.isArray(userRows) && userRows.length > 0) {
           const masterUsers = store.users.filter(
             (u: any) =>
@@ -1225,16 +1248,7 @@ export const saasService = {
           }
           store.users = dbUsers;
         }
-      } catch {}
 
-      // Sync Clients, Services, Professionals, and Appointments counts/records for Master Admin & Portal consistency
-      try {
-        const [[clientRows], [serviceRows], [profRows], [appRows]]: any = await Promise.all([
-          queryWithRetry(`SELECT * FROM Client`),
-          queryWithRetry(`SELECT * FROM Service`),
-          queryWithRetry(`SELECT * FROM Professional`),
-          queryWithRetry(`SELECT * FROM Appointment`),
-        ]);
         if (Array.isArray(clientRows)) store.clients = clientRows;
         if (Array.isArray(serviceRows)) {
           store.services = serviceRows.map((s: any) => ({
@@ -1249,10 +1263,16 @@ export const saasService = {
           }));
         }
         if (Array.isArray(appRows)) store.appointments = appRows;
-      } catch {}
-    } catch (e) {
-      handleDbFallbackError('syncTenantsFromMySql', e);
-    }
+
+        lastFullSyncTimestamp = Date.now();
+      } catch (e) {
+        handleDbFallbackError('syncTenantsFromMySql', e);
+      } finally {
+        syncInFlightPromise = null;
+      }
+    })();
+
+    return syncInFlightPromise;
   },
 
   async getPublicPartnerDirectory(filters?: { search?: string; category?: string }) {
