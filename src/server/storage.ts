@@ -2036,6 +2036,31 @@ export const db = {
     return this.enrichClientRecord(memClient, memoryStore.appointments.filter(a => a.tenantId === tenantId));
   },
 
+  async deleteClient(tenantId: string, clientId: string, actorId?: string | null) {
+    const existingClients = await this.getClients(tenantId);
+    const existing = existingClients.find((c: any) => c.id === clientId);
+    if (!existing) {
+      const err: any = new Error('Cliente não encontrada neste estabelecimento.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const pool = getMySqlPool();
+    if (pool) {
+      try {
+        await pool.execute(`DELETE FROM Client WHERE id = ? AND tenantId = ?`, [clientId, tenantId]);
+      } catch (e) {}
+    }
+
+    const idx = memoryStore.clients.findIndex((c: any) => c.id === clientId && c.tenantId === tenantId);
+    if (idx >= 0) {
+      memoryStore.clients.splice(idx, 1);
+    }
+
+    await this.recordAuditLog(tenantId, actorId || null, 'CLIENT_DELETED', { clientId, clientName: existing.name });
+    return { id: clientId, deleted: true };
+  },
+
   async addClientInternalNote(tenantId: string, clientId: string, noteData: { content: string; authorId: string; authorName: string }) {
     const existingClients = await this.getClients(tenantId);
     const existing = existingClients.find((c: any) => c.id === clientId);

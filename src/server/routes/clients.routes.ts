@@ -145,4 +145,15 @@ router.put('/:id/tags', requireRole(['OWNER', 'MANAGER', 'RECEPTIONIST']), async
   }
 });
 
+router.delete('/:id', requireRole(['OWNER', 'MANAGER', 'RECEPTIONIST']), async (req, res, next) => {
+  try {
+    const tenantId = req.tenantContext?.tenantId || 'biz-1';
+    const { id } = req.params;
+    const result = await db.deleteClient(tenantId, id, req.user?.id);
+    res.json({ success: true, ...result, message: 'Cliente excluída com sucesso' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

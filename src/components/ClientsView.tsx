@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 
 interface ClientsViewProps {
@@ -48,6 +49,31 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [profileData, setProfileData] = useState<ClientProfileData | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+    setDeleting(true);
+    try {
+      const res = await apiFetch(`/api/v1/clients/${clientToDelete.id}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Erro ao excluir cliente.');
+      }
+      setSelectedClientId(null);
+      setProfileData(null);
+      setClientToDelete(null);
+      fetchFilteredClients();
+      if (onRefreshClients) onRefreshClients();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir cliente.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Profile Edit / Note / Tag states
   const [isEditingBasic, setIsEditingBasic] = useState(false);
@@ -362,7 +388,20 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                   <span className="text-stone-500">
                     <strong>{client.completedAppointmentsCount ?? 0}</strong> atendimento(s) concluído(s)
                   </span>
-                  <span className="font-semibold text-rose-600 hover:text-rose-700">Ver ficha completa →</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setClientToDelete({ id: client.id, name: client.name });
+                      }}
+                      className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      title="Excluir cliente"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <span className="font-semibold text-rose-600 hover:text-rose-700">Ver ficha completa →</span>
+                  </div>
                 </div>
               </div>
             ))
@@ -409,15 +448,29 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                   Ficha CRM, indicadores de relacionamento, histórico e anotações internas
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setSelectedClientId(null);
-                  setProfileData(null);
-                }}
-                className="min-w-[40px] min-h-[40px] p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-200/60 flex items-center justify-center shrink-0"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (profileData?.client) {
+                      setClientToDelete({ id: profileData.client.id, name: profileData.client.name });
+                    }
+                  }}
+                  className="px-3 py-2 rounded-xl bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-xs flex items-center gap-1.5 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Excluir</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedClientId(null);
+                    setProfileData(null);
+                  }}
+                  className="min-w-[40px] min-h-[40px] p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-200/60 flex items-center justify-center shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {loadingProfile || !profileData ? (
@@ -747,6 +800,46 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {clientToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-stone-200 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg text-stone-900">Excluir Cliente</h3>
+                <p className="text-xs text-stone-500">Esta ação é permanente e não pode ser desfeita.</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-stone-700">
+              Tem certeza que deseja excluir a cliente <strong className="text-stone-900">{clientToDelete.name}</strong>?
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-100">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setClientToDelete(null)}
+                className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-700 hover:bg-stone-50 font-semibold text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={confirmDeleteClient}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 text-white hover:bg-rose-700 font-semibold text-xs shadow-sm disabled:opacity-50"
+              >
+                {deleting ? 'Excluindo...' : 'Sim, Excluir'}
+              </button>
+            </div>
           </div>
         </div>
       )}
