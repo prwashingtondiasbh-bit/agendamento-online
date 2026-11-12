@@ -552,7 +552,24 @@ async function runFullStoreLifecycleAndSecurityTests() {
     });
     assert.strictEqual(blockRes.status, 201, 'Lojista deve criar bloqueio de horário na agenda');
 
-    console.log('✅ Fase 2 concluída: Loja criada, alterações salvas, equipe criada/removida e bloqueio aplicado!');
+    // 2.10 Configure lunch break (12:00 - 13:00) for professional and verify booking conflict
+    const targetDayOfWeek = new Date(`${targetDate}T00:00:00-03:00`).getDay();
+    const updateProfWhRes = await jsonFetch(`/professionals/${profId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ownerToken}`,
+        'x-enforce-token-signature': 'true',
+      },
+      body: JSON.stringify({
+        workingHours: [
+          { dayOfWeek: targetDayOfWeek, startTime: '08:00', endTime: '20:00', breakStart: '12:00', breakEnd: '13:00' },
+        ],
+      }),
+    });
+    assert.strictEqual(updateProfWhRes.status, 200, 'Lojista deve configurar horário de almoço da profissional');
+
+    console.log('✅ Fase 2 concluída: Loja criada, alterações salvas, equipe, bloqueio e horário de almoço aplicados!');
 
     // =========================================================================
     // FASE 3: CADASTRO DE CLIENTE, AGENDAMENTO ONLINE, SINCRONIZAÇÃO & PAGAMENTO PIX
@@ -648,6 +665,33 @@ async function runFullStoreLifecycleAndSecurityTests() {
       }),
     });
     assert.strictEqual(custLoginRes.status, 200, 'Cliente deve autenticar no portal CUSTOMER');
+
+    // Verify 12:00 (lunch break) is blocked in public available slots and booking is rejected with 409
+    const lunchSlotsRes = await jsonFetch(
+      `/public/tenants/${storeSlug}/available-slots?serviceId=${serviceId}&professionalId=${profId}&date=${targetDate}`
+    );
+    assert.strictEqual(lunchSlotsRes.status, 200);
+    assert.ok(
+      lunchSlotsRes.body.data.occupiedSlots.some((o: any) => o.time === '12:00'),
+      'Horário de almoço (12:00) deve constar como ocupado na disponibilidade pública'
+    );
+
+    const lunchBookingRes = await jsonFetch(`/public/tenants/${storeSlug}/appointments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${customerToken}`,
+        'x-enforce-token-signature': 'true',
+      },
+      body: JSON.stringify({
+        serviceId,
+        professionalId: profId,
+        date: targetDate,
+        time: '12:00',
+        notes: 'Tentativa no horário de almoço',
+      }),
+    });
+    assert.strictEqual(lunchBookingRes.status, 409, 'Agendamento durante o horário de almoço deve ser rejeitado com 409');
 
     // 3.5 Verify price/status tampering on public booking is rejected (400)
     const tamperBookingRes = await jsonFetch(`/public/tenants/${storeSlug}/appointments`, {

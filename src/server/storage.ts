@@ -2503,6 +2503,25 @@ export const db = {
       throw blockErr;
     }
 
+    // Check Professional Working Hours & Lunch Break Window
+    const dateStr = startDateTime.toISOString().split('T')[0];
+    const spInfo = this.getSaoPauloHourMinute(startDateTime);
+    const profWh = memoryStore.workingHours.filter((wh: any) => wh.professionalId === data.professionalId);
+    const whForDay = profWh.find((w: any) => Number(w.dayOfWeek) === spInfo.dayOfWeek);
+    if (whForDay && whForDay.breakStart && whForDay.breakEnd) {
+      const [bsH, bsM] = String(whForDay.breakStart).split(':').map(Number);
+      const [beH, beM] = String(whForDay.breakEnd).split(':').map(Number);
+      const breakStartMs = new Date(`${dateStr}T${String(bsH).padStart(2, '0')}:${String(bsM || 0).padStart(2, '0')}:00-03:00`).getTime();
+      const breakEndMs = new Date(`${dateStr}T${String(beH).padStart(2, '0')}:${String(beM || 0).padStart(2, '0')}:00-03:00`).getTime();
+      if (startDateTime.getTime() < breakEndMs && endDateTime.getTime() > breakStartMs) {
+        const suggestedSlots = await this.getSuggestedSlots(tenantId, data.professionalId, data.serviceId, startDateTime);
+        const breakErr: any = new Error('Horário indisponível: o atendimento coincide com o horário de almoço/intervalo da profissional.');
+        breakErr.statusCode = 409;
+        breakErr.suggestedSlots = suggestedSlots;
+        throw breakErr;
+      }
+    }
+
     const officialServicePriceCents = Number(service.priceCents || Math.round(Number(service.price || 0) * 100));
     const priceCents =
       data._serverCalculatedPriceCents !== undefined && Number.isFinite(Number(data._serverCalculatedPriceCents))
@@ -2792,6 +2811,23 @@ export const db = {
       const err: any = new Error('Horário indisponível: existe um bloqueio de agenda neste período para a profissional selecionada.');
       err.statusCode = 409;
       throw err;
+    }
+
+    // Check Lunch Break Window
+    const dateStrU = targetStart.toISOString().split('T')[0];
+    const spInfoU = this.getSaoPauloHourMinute(targetStart);
+    const profWhU = memoryStore.workingHours.filter((wh: any) => wh.professionalId === targetProfessionalId);
+    const whForDayU = profWhU.find((w: any) => Number(w.dayOfWeek) === spInfoU.dayOfWeek);
+    if (whForDayU && whForDayU.breakStart && whForDayU.breakEnd) {
+      const [bsH, bsM] = String(whForDayU.breakStart).split(':').map(Number);
+      const [beH, beM] = String(whForDayU.breakEnd).split(':').map(Number);
+      const breakStartMs = new Date(`${dateStrU}T${String(bsH).padStart(2, '0')}:${String(bsM || 0).padStart(2, '0')}:00-03:00`).getTime();
+      const breakEndMs = new Date(`${dateStrU}T${String(beH).padStart(2, '0')}:${String(beM || 0).padStart(2, '0')}:00-03:00`).getTime();
+      if (targetStart.getTime() < breakEndMs && targetEnd.getTime() > breakStartMs) {
+        const err: any = new Error('Horário indisponível: o atendimento coincide com o horário de almoço/intervalo da profissional.');
+        err.statusCode = 409;
+        throw err;
+      }
     }
 
     // Check overlapping appointments
