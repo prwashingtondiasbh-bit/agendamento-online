@@ -23,6 +23,7 @@ import {
   Copy,
   Check,
   Share2,
+  Trash2,
 } from 'lucide-react';
 
 interface MasterAdminPortalProps {
@@ -102,6 +103,13 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
     address: '',
     description: '',
   });
+
+  // Delete Tenant Confirmation Modal state
+  const [tenantToDelete, setTenantToDelete] = useState<any | null>(null);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [deletingTenant, setDeletingTenant] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const authHeaders = () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('agenda_token') : null;
@@ -385,6 +393,67 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
     }
   };
 
+  const openDeleteTenantModal = (tenantObj: any) => {
+    const normalizedId = tenantObj?.tenant?.id || tenantObj?.id;
+    const normalizedName = tenantObj?.tenant?.name || tenantObj?.name || 'Estabelecimento';
+    const normalizedSlug = tenantObj?.tenant?.slug || tenantObj?.slug || '';
+    const ownerEmail = tenantObj?.owner?.email || tenantObj?.email || '';
+    const metrics = tenantObj?.metrics || {
+      clientsCount: tenantObj?.clientsCount || 0,
+      servicesCount: tenantObj?.servicesCount || 0,
+      appointmentsCount: tenantObj?.appointmentsCount || 0,
+    };
+
+    setTenantToDelete({
+      id: normalizedId,
+      name: normalizedName,
+      slug: normalizedSlug,
+      ownerEmail,
+      metrics,
+    });
+    setDeleteReason('');
+    setDeleteConfirmed(false);
+    setDeleteError('');
+  };
+
+  const handleConfirmDeleteTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenantToDelete || !deleteConfirmed) return;
+
+    setDeleteError('');
+    setDeletingTenant(true);
+    try {
+      const res = await fetch(`/api/v1/master-admin/tenants/${tenantToDelete.id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ reason: deleteReason.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data?.success) {
+        setDeleteError(data?.error || 'Não foi possível excluir a loja. Tente novamente.');
+        return;
+      }
+
+      const deletedName = data?.data?.deletedTenantName || tenantToDelete.name;
+      if (selectedTenantId === tenantToDelete.id) {
+        setSelectedTenantId(null);
+        setTenantDetails(null);
+      }
+      setTenantToDelete(null);
+      setGlobalFeedback({
+        type: 'success',
+        text: data?.message || `Loja "${deletedName}" excluída permanentemente com sucesso.`,
+      });
+      await loadAll();
+    } catch {
+      setDeleteError('Erro de conexão ao tentar excluir o estabelecimento.');
+    } finally {
+      setDeletingTenant(false);
+    }
+  };
+
   const formatBRL = (cents: number) =>
     (Number(cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -655,6 +724,14 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
                         >
                           Gerenciar
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => openDeleteTenantModal(t)}
+                          title="Excluir Loja Permanentemente"
+                          className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -839,6 +916,14 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
                       className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold"
                     >
                       Gerenciar Assinatura & Acesso
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openDeleteTenantModal(t)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Excluir Loja</span>
                     </button>
                   </div>
                 </div>
@@ -1035,7 +1120,9 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
                 <div key={log.id} className="py-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <span className="font-bold text-stone-900">{log.action}</span>
-                    <span className="text-stone-500"> · Empresa: {log.tenantId} · Ator: {log.userId || 'sistema'}</span>
+                    <span className="text-stone-500">
+                      {' '}· Empresa: {log.tenantId || log.details?.deletedTenantName || 'Global'} · Ator: {log.userId || 'sistema'}
+                    </span>
                     {log.details && (
                       <pre className="mt-1 text-[11px] text-stone-600 bg-stone-50 p-2 rounded-lg overflow-x-auto">
                         {typeof log.details === 'string' ? log.details : JSON.stringify(log.details, null, 2)}
@@ -1351,6 +1438,29 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Section 5: Danger Zone - Delete Tenant Permanently */}
+            <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-900">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>5. Zona de Perigo — Excluir Loja Permanentemente</span>
+                  </div>
+                  <p className="text-[11px] text-rose-800">
+                    Remove permanentemente este estabelecimento, agenda, serviços, profissionais, pagamentos e acessos exclusivos da equipe. Contas globais de clientes vinculados a outras lojas são preservadas.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openDeleteTenantModal(tenantDetails)}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shrink-0 shadow-xs transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Loja Permanentemente</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1689,6 +1799,113 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR EXCLUSÃO PERMANENTE DE LOJA */}
+      {tenantToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/75 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-rose-200 space-y-5">
+            <div className="flex items-start justify-between gap-3 border-b border-stone-100 pb-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600">
+                    Ação Irreversível · Super Admin
+                  </span>
+                  <h3 className="text-lg font-bold text-stone-900 font-serif">
+                    Excluir Loja Permanentemente
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={deletingTenant}
+                onClick={() => setTenantToDelete(null)}
+                className="text-xs text-stone-400 hover:text-stone-700 p-1.5 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 space-y-2 text-xs text-rose-900">
+              <p className="font-semibold">
+                Você está prestes a excluir permanentemente o estabelecimento{' '}
+                <strong className="underline">{tenantToDelete.name}</strong>.
+              </p>
+              <div className="text-[11px] text-rose-800 space-y-0.5">
+                <div>
+                  <strong>Link Público:</strong> <code>/agendar/{tenantToDelete.slug}</code>
+                </div>
+                {tenantToDelete.ownerEmail && (
+                  <div>
+                    <strong>Responsável:</strong> {tenantToDelete.ownerEmail}
+                  </div>
+                )}
+                <div>
+                  <strong>Dados removidos:</strong> {tenantToDelete.metrics?.clientsCount || 0} cliente(s) da loja ·{' '}
+                  {tenantToDelete.metrics?.servicesCount || 0} serviço(s) ·{' '}
+                  {tenantToDelete.metrics?.appointmentsCount || 0} agendamento(s), além de pagamentos, bloqueios e assinaturas desta empresa.
+                </div>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 bg-rose-50 border border-rose-300 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmDeleteTenant} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-stone-700 mb-1.5">
+                  Motivo da Exclusão (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="Ex: Loja de teste encerrada ou solicitação do proprietário"
+                  className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                />
+              </div>
+
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-stone-50 border border-stone-200 cursor-pointer text-xs text-stone-800">
+                <input
+                  type="checkbox"
+                  checked={deleteConfirmed}
+                  onChange={(e) => setDeleteConfirmed(e.target.checked)}
+                  className="mt-0.5 accent-rose-600 rounded"
+                />
+                <span>
+                  Confirmo que desejo <strong>excluir permanentemente</strong> a loja{' '}
+                  <strong>{tenantToDelete.name}</strong> e todos os seus dados vinculados.
+                </span>
+              </label>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  disabled={deletingTenant}
+                  onClick={() => setTenantToDelete(null)}
+                  className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-700 text-xs font-semibold hover:bg-stone-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!deleteConfirmed || deletingTenant}
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{deletingTenant ? 'Excluindo Loja...' : 'Excluir Permanentemente'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

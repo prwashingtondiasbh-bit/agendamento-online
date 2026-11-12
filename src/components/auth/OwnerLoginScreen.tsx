@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Building2, Lock, Mail, ArrowRight, AlertCircle, Loader2, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { AntiBotChallenge, BotGuardPayload } from './AntiBotChallenge';
 
 interface OwnerLoginScreenProps {
   onLoginSuccess: (user: any) => void;
@@ -16,6 +17,13 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
+  const [botResetKey, setBotResetKey] = useState(0);
+  const [botGuard, setBotGuard] = useState<BotGuardPayload>({
+    website: '',
+    challengeToken: '',
+    challengeAnswer: '',
+    formRenderedAt: Date.now(),
+  });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,11 +35,17 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          portalType: 'STAFF',
+          botGuard,
+        }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.success) {
+        setBotResetKey((k) => k + 1);
         setError(data.error || 'E-mail ou senha incorretos.');
         return;
       }
@@ -68,9 +82,10 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({
       const res = await fetch('/api/v1/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), botGuard }),
       });
       const data = await res.json().catch(() => ({}));
+      setBotResetKey((k) => k + 1);
 
       if (data.success) {
         setSuccess('Instruções para redefinição de senha enviadas para seu e-mail!');
@@ -168,6 +183,8 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({
                 </div>
               </div>
 
+              <AntiBotChallenge resetKey={botResetKey} theme="light" onChange={setBotGuard} />
+
               <button
                 type="submit"
                 disabled={loading}
@@ -205,10 +222,15 @@ export const OwnerLoginScreen: React.FC<OwnerLoginScreenProps> = ({
                 </div>
               </div>
 
+              <AntiBotChallenge resetKey={botResetKey} theme="light" onChange={setBotGuard} />
+
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsForgot(false)}
+                  onClick={() => {
+                    setIsForgot(false);
+                    setBotResetKey((k) => k + 1);
+                  }}
                   className="w-1/3 py-2.5 px-3 rounded-xl border border-stone-200 text-stone-600 text-xs font-semibold hover:bg-stone-50"
                 >
                   Voltar

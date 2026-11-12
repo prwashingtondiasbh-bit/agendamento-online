@@ -6,6 +6,14 @@ import { db, memoryStore } from '../storage.js';
 import { saasService } from '../saasService.js';
 import { cancellationService } from '../cancellationService.js';
 import { createCancellationRequestSchema, rescheduleAppointmentSchema } from '../validation/schemas.js';
+import { signSessionToken } from '../middleware/auth.js';
+import {
+  antiBotGuard,
+  checkLoginLockout,
+  recordFailedLoginAttempt,
+  clearFailedLoginAttempts,
+  extractClientIp,
+} from '../middleware/antiBot.js';
 
 const router = Router();
 
@@ -201,7 +209,7 @@ async function resolveCustomerContext(req: any, res: any, next: any) {
 // -------------------------------------------------------------
 // PUBLIC CUSTOMER AUTHENTICATION (Register & Login by Store Slug)
 // -------------------------------------------------------------
-router.post('/auth/register', async (req, res, next) => {
+router.post('/auth/register', antiBotGuard({ mode: 'register' }), async (req, res, next) => {
   try {
     await saasService.syncTenantsFromMySql();
     if (req.body?.role === 'SUPER_ADMIN' || req.body?.isMasterAdmin === true) {
@@ -251,17 +259,15 @@ router.post('/auth/register', async (req, res, next) => {
             name || existing.name,
             phone || (existing as any).phone
           );
-          const sessionPayload = Buffer.from(
-            JSON.stringify({
-              userId: existing.id,
-              userName: existing.name,
-              email: existing.email,
-              phone: client.phone || (existing as any).phone,
-              tenantId: resolvedTenantId,
-              role: 'CUSTOMER',
-              permissions: ['customer:*'],
-            })
-          ).toString('base64');
+          const sessionPayload = signSessionToken({
+            userId: existing.id,
+            userName: existing.name,
+            email: existing.email,
+            phone: client.phone || (existing as any).phone,
+            tenantId: resolvedTenantId,
+            role: 'CUSTOMER',
+            permissions: ['customer:*'],
+          });
 
           res.cookie('agenda_session', sessionPayload, {
             httpOnly: true,
@@ -306,18 +312,16 @@ router.post('/auth/register', async (req, res, next) => {
       contactPreference: contactPreference || 'WHATSAPP',
     });
 
-    // Generate secure session cookie
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: result.user.id,
-        userName: result.user.name,
-        email: result.user.email,
-        phone: result.client.phone,
-        tenantId: result.client.tenantId,
-        role: 'CUSTOMER',
-        permissions: ['customer:*'],
-      })
-    ).toString('base64');
+    // Generate signed session cookie
+    const sessionPayload = signSessionToken({
+      userId: result.user.id,
+      userName: result.user.name,
+      email: result.user.email,
+      phone: result.client.phone,
+      tenantId: result.client.tenantId,
+      role: 'CUSTOMER',
+      permissions: ['customer:*'],
+    });
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
@@ -349,17 +353,37 @@ router.post('/auth/register', async (req, res, next) => {
   }
 });
 
-router.post('/auth/login', async (req, res, next) => {
+router.post('/auth/login', antiBotGuard({ mode: 'login' }), async (req, res, next) => {
   try {
     await saasService.syncTenantsFromMySql();
-    const { email, password, slug, tenantId } = req.body || {};
+    const { email: rawEmail, password, slug, tenantId } = req.body || {};
+    const email = String(rawEmail || '').trim();
 
     if (!email || !password) {
       return res.status(400).json({ success: false, error: 'E-mail e senha são obrigatórios' });
     }
 
+    const lockout = checkLoginLockout(req, email);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false,
+        code: 'TOO_MANY_FAILED_ATTEMPTS',
+        retryAfterSeconds: lockout.retryAfterSec,
+        error: `Muitas tentativas de login inválidas. Aguarde ${Math.ceil(lockout.retryAfterSec / 60)} minuto(s) e tente novamente.`,
+      });
+    }
+
     const user = await db.findUserByEmail(email);
     if (!user || !user.passwordHash) {
+      const failState = recordFailedLoginAttempt(req, email);
+      if (failState.lockedNow) {
+        return res.status(429).json({
+          success: false,
+          code: 'TOO_MANY_FAILED_ATTEMPTS',
+          retryAfterSeconds: failState.retryAfterSec,
+          error: 'Muitas tentativas inválidas. Acesso temporariamente bloqueado por segurança.',
+        });
+      }
       return res.status(401).json({ success: false, error: 'E-mail ou senha inválidos' });
     }
 
@@ -373,8 +397,38 @@ router.post('/auth/login', async (req, res, next) => {
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
+      const failState = recordFailedLoginAttempt(req, email);
+      if (failState.lockedNow) {
+        return res.status(429).json({
+          success: false,
+          code: 'TOO_MANY_FAILED_ATTEMPTS',
+          retryAfterSeconds: failState.retryAfterSec,
+          error: 'Muitas tentativas inválidas consecutivas. Aguarde alguns minutos.',
+        });
+      }
       return res.status(401).json({ success: false, error: 'E-mail ou senha inválidos' });
     }
+
+    // Prevent administrative/staff accounts from authenticating through the public customer login endpoint
+    if (
+      (user as any).isMasterAdmin ||
+      ['SUPER_ADMIN', 'OWNER', 'MANAGER', 'RECEPTIONIST', 'PROFESSIONAL'].includes(String(user.role || ''))
+    ) {
+      await db.recordAuditLog(
+        null,
+        user.id,
+        'SECURITY_UNAUTHORIZED_PORTAL_LOGIN_ATTEMPT',
+        { portalType: 'CUSTOMER_ENDPOINT', attemptedEmail: email, actualRole: user.role },
+        extractClientIp(req)
+      ).catch(() => {});
+      return res.status(403).json({
+        success: false,
+        code: 'PORTAL_ACCESS_DENIED',
+        error: 'Esta área de login é exclusiva para clientes. Utilize o acesso apropriado para lojistas ou administradores.',
+      });
+    }
+
+    clearFailedLoginAttempts(req, email);
 
     const requestedStoreRef = String(slug || tenantId || '').trim();
     let targetTenantId = user.tenantId || 'biz-1';
@@ -412,18 +466,16 @@ router.post('/auth/login', async (req, res, next) => {
       );
     }
 
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: user.id,
-        userName: user.name,
-        email: user.email,
-        phone: client?.phone || (user as any).phone,
-        tenantId: targetTenantId,
-        role: (user.role as any) || 'CUSTOMER',
-        permissions: ['customer:*'],
-        iat: Date.now(),
-      })
-    ).toString('base64');
+    const sessionPayload = signSessionToken({
+      userId: user.id,
+      userName: user.name,
+      email: user.email,
+      phone: client?.phone || (user as any).phone,
+      tenantId: targetTenantId,
+      role: 'CUSTOMER',
+      permissions: ['customer:*'],
+      iat: Date.now(),
+    });
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
@@ -685,18 +737,16 @@ router.post('/switch-store', async (req: any, res, next) => {
       });
     }
 
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: req.user.id,
-        userName: req.user.name,
-        email: req.user.email,
-        phone: linkedClient.phone || req.user.phone,
-        tenantId: targetTenant.id,
-        role: 'CUSTOMER',
-        permissions: ['customer:*'],
-        iat: Date.now(),
-      })
-    ).toString('base64');
+    const sessionPayload = signSessionToken({
+      userId: req.user.id,
+      userName: req.user.name,
+      email: req.user.email,
+      phone: linkedClient.phone || req.user.phone,
+      tenantId: targetTenant.id,
+      role: 'CUSTOMER',
+      permissions: ['customer:*'],
+      iat: Date.now(),
+    });
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,

@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Calendar,
 } from 'lucide-react';
+import { AntiBotChallenge, BotGuardPayload } from './AntiBotChallenge';
 
 interface CustomerLoginScreenProps {
   defaultSlug?: string;
@@ -34,6 +35,13 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [botResetKey, setBotResetKey] = useState(0);
+  const [botGuard, setBotGuard] = useState<BotGuardPayload>({
+    website: '',
+    challengeToken: '',
+    challengeAnswer: '',
+    formRenderedAt: Date.now(),
+  });
 
   const resolvedSlug =
     storeInfo?.slug ||
@@ -85,9 +93,13 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
         const res = await fetch('/api/v1/auth/forgot-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email.trim() }),
+          body: JSON.stringify({
+            email: email.trim(),
+            botGuard,
+          }),
         });
         const data = await res.json().catch(() => ({}));
+        setBotResetKey((k) => k + 1);
         if (data.success) {
           setSuccess('Instruções para redefinição de senha foram enviadas para o seu e-mail!');
         } else {
@@ -104,6 +116,8 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
               password,
               slug: activeSlug,
               tenantId: activeTenantId,
+              portalType: 'CUSTOMER',
+              botGuard,
             }
           : {
               name: name.trim(),
@@ -112,6 +126,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
               password,
               slug: activeSlug,
               tenantId: activeTenantId,
+              botGuard,
             };
 
       const res = await fetch(endpoint, {
@@ -123,6 +138,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok || !json.success) {
+        setBotResetKey((k) => k + 1);
         setError(json.error || 'Falha na autenticação. Verifique os dados informados.');
         return;
       }
@@ -192,6 +208,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
                 setMode('login');
                 setError('');
                 setSuccess('');
+                setBotResetKey((k) => k + 1);
               }}
               className={`py-2.5 text-xs font-bold rounded-xl transition-all ${
                 mode === 'login'
@@ -207,6 +224,7 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
                 setMode('register');
                 setError('');
                 setSuccess('');
+                setBotResetKey((k) => k + 1);
               }}
               className={`py-2.5 text-xs font-bold rounded-xl transition-all ${
                 mode === 'register'
@@ -325,6 +343,8 @@ export const CustomerLoginScreen: React.FC<CustomerLoginScreenProps> = ({
                 </div>
               </div>
             )}
+
+            <AntiBotChallenge resetKey={botResetKey} theme="light" onChange={setBotGuard} />
 
             {mode === 'forgot' ? (
               <div className="flex gap-2">

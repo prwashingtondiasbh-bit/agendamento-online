@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { memoryStore } from '../storage.js';
 import { saasService } from '../saasService.js';
+import { getSecuritySecret } from './antiBot.js';
 
 export interface AuthUser {
   id: string;
@@ -164,6 +166,70 @@ export function hasPermission(role: UserRole | undefined, permission: string): b
 }
 
 const revokedSessionTokens = new Set<string>();
+const DEFAULT_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+export function signSessionToken(payload: Record<string, any>): string {
+  const enriched = {
+    ...payload,
+    iat: payload.iat || Date.now(),
+    exp: payload.exp || Date.now() + DEFAULT_SESSION_MAX_AGE_MS,
+  };
+  const bodyB64 = Buffer.from(JSON.stringify(enriched), 'utf8').toString('base64url');
+  const sig = crypto
+    .createHmac('sha256', getSecuritySecret())
+    .update(bodyB64)
+    .digest('hex');
+  return `${bodyB64}.${sig}`;
+}
+
+export function verifySessionToken(
+  rawToken: string,
+  options?: { strictSignature?: boolean }
+): { valid: boolean; data?: any; reason?: string } {
+  const clean = String(rawToken || '').trim();
+  if (!clean) return { valid: false, reason: 'EMPTY_TOKEN' };
+
+  if (clean.includes('.')) {
+    const parts = clean.split('.');
+    if (parts.length !== 2) {
+      return { valid: false, reason: 'MALFORMED_SIGNED_TOKEN' };
+    }
+    const [bodyB64, providedSig] = parts;
+    const expectedSig = crypto
+      .createHmac('sha256', getSecuritySecret())
+      .update(bodyB64)
+      .digest('hex');
+
+    const sigBuf = Buffer.from(providedSig, 'utf8');
+    const expBuf = Buffer.from(expectedSig, 'utf8');
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return { valid: false, reason: 'INVALID_SIGNATURE' };
+    }
+
+    try {
+      const parsed = JSON.parse(Buffer.from(bodyB64, 'base64url').toString('utf8'));
+      if (parsed?.exp && Date.now() > Number(parsed.exp)) {
+        return { valid: false, reason: 'SESSION_EXPIRED' };
+      }
+      return { valid: true, data: parsed };
+    } catch {
+      return { valid: false, reason: 'MALFORMED_PAYLOAD' };
+    }
+  }
+
+  // Unsigned legacy Base64 JSON tokens are strictly rejected in production or when signature enforcement is requested
+  const isTestMode = process.env.NODE_ENV === 'test' || process.env.AGENDA_TEST_MODE === '1';
+  if (!isTestMode || options?.strictSignature) {
+    return { valid: false, reason: 'SIGNATURE_REQUIRED' };
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(clean, 'base64').toString('utf8'));
+    return { valid: true, data: parsed };
+  } catch {
+    return { valid: false, reason: 'MALFORMED_LEGACY_TOKEN' };
+  }
+}
 
 export function extractRawSessionToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
@@ -196,7 +262,17 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       return res.status(401).json({ success: false, error: 'Sessão encerrada. Faça login novamente.' });
     }
 
-    const sessionData = JSON.parse(Buffer.from(rawSession, 'base64').toString('utf8'));
+    const strictSignature = req.headers['x-enforce-token-signature'] === 'true';
+    const verified = verifySessionToken(rawSession, { strictSignature });
+    if (!verified.valid || !verified.data) {
+      return res.status(401).json({
+        success: false,
+        code: verified.reason || 'INVALID_SESSION',
+        error: 'Sessão inválida ou expirada. Faça login novamente.',
+      });
+    }
+
+    const sessionData = verified.data;
     
     if (sessionData && sessionData.userId) {
       const serverUser = (memoryStore.users as any[]).find(

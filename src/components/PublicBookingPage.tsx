@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { PixCheckoutModal } from './PixCheckoutModal';
 import { updateDocumentSeo } from '../utils/seo';
+import { AntiBotChallenge, BotGuardPayload } from './auth/AntiBotChallenge';
 
 interface PublicBookingPageProps {
   slug: string;
@@ -77,6 +78,13 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [botResetKey, setBotResetKey] = useState(0);
+  const [botGuard, setBotGuard] = useState<BotGuardPayload>({
+    website: '',
+    challengeToken: '',
+    challengeAnswer: '',
+    formRenderedAt: Date.now(),
+  });
 
   const availableHours = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
@@ -292,6 +300,8 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
               password: authPassword,
               slug: activeSlug,
               tenantId: activeTenantId,
+              portalType: 'CUSTOMER',
+              botGuard,
             }
           : {
               name: authName.trim(),
@@ -300,6 +310,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
               password: authPassword,
               slug: activeSlug,
               tenantId: activeTenantId,
+              botGuard,
             };
 
       const res = await fetch(endpoint, {
@@ -311,6 +322,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
       const json = await res.json();
 
       if (!res.ok || !json.success) {
+        setBotResetKey((k) => k + 1);
         setAuthError(json.error || 'Falha na autenticação. Verifique os dados informados.');
         return;
       }
@@ -877,6 +889,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
                 onClick={() => {
                   setAuthMode('login');
                   setAuthError('');
+                  setBotResetKey((k) => k + 1);
                 }}
                 className={`flex-1 py-2 rounded-xl transition-all ${
                   authMode === 'login'
@@ -891,6 +904,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
                 onClick={() => {
                   setAuthMode('register');
                   setAuthError('');
+                  setBotResetKey((k) => k + 1);
                 }}
                 className={`flex-1 py-2 rounded-xl transition-all ${
                   authMode === 'register'
@@ -957,6 +971,8 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
                   className="w-full px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl"
                 />
               </div>
+              <AntiBotChallenge resetKey={botResetKey} theme="light" onChange={setBotGuard} />
+
               <button
                 type="submit"
                 disabled={authLoading}

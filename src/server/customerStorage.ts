@@ -513,6 +513,13 @@ export const customerStorage = {
       if (clientEmail && a.client?.email && String(a.client.email).toLowerCase() === clientEmail) return true;
       return false;
     });
+    const tenantPayments = await db.listPayments(tenantId).catch(() => []);
+    const paymentByAppointmentId = new Map<string, any>();
+    for (const p of tenantPayments as any[]) {
+      if (p?.appointmentId && !paymentByAppointmentId.has(p.appointmentId)) {
+        paymentByAppointmentId.set(p.appointmentId, p);
+      }
+    }
     const now = new Date();
 
     const formattedApps = clientApps.map((a: any) => {
@@ -559,9 +566,19 @@ export const customerStorage = {
           ) || null
         : null;
 
+      const matchedPayment = paymentByAppointmentId.get(a.id);
+      const effectivePaymentStatus = matchedPayment?.status || a.paymentStatus || (effectiveStatus === 'CONFIRMED' && depositCents > 0 ? 'APPROVED' : undefined);
+      const isDepositPaid = Boolean(
+        a.depositPaid ||
+          effectivePaymentStatus === 'APPROVED' ||
+          matchedPayment?.status === 'APPROVED'
+      );
+
       return {
         ...a,
         status: effectiveStatus,
+        paymentStatus: effectivePaymentStatus,
+        depositPaid: isDepositPaid,
         tenantId,
         establishment: {
           id: tenantId,

@@ -2269,8 +2269,11 @@ export const db = {
       throw err;
     }
 
-    const [openH] = openTime.split(':').map(Number);
-    const [closeH] = closeTime.split(':').map(Number);
+    const [openH, openM = 0] = openTime.split(':').map(Number);
+    const [closeH, closeM = 0] = closeTime.split(':').map(Number);
+    const closeTotalMin = closeH * 60 + closeM;
+    const startTotalMin = openH * 60 + openM;
+
     const prepMin = Number(service.preparationMin || 0);
     const totalDurationMin =
       Number(service.durationMin || 60) +
@@ -2304,30 +2307,40 @@ export const db = {
       reason: string | null;
     }> = [];
 
-    for (let h = openH; h < closeH; h++) {
-      const hh = String(h).padStart(2, '0');
-      const timeLabel = `${hh}:00`;
-      // Construct timestamp explicitly in America/Sao_Paulo (-03:00)
+    for (let currentMin = startTotalMin; currentMin < closeTotalMin; currentMin += 30) {
+      const slotH = Math.floor(currentMin / 60);
+      const slotM = currentMin % 60;
+      const timeLabel = `${String(slotH).padStart(2, '0')}:${String(slotM).padStart(2, '0')}`;
+      
       const requestedStart = new Date(`${params.date}T${timeLabel}:00-03:00`);
       if (isNaN(requestedStart.getTime())) continue;
 
       const effectiveStart = new Date(requestedStart.getTime() + prepMin * 60000);
       const effectiveEnd = new Date(effectiveStart.getTime() + totalDurationMin * 60000);
+      const effectiveEndTotalMin = slotH * 60 + slotM + prepMin + totalDurationMin;
 
       let available = true;
       let reason: string | null = null;
 
+      // Check if service duration extends past closing time
+      if (effectiveEndTotalMin > closeTotalMin) {
+        available = false;
+        reason = 'FORA_DO_EXPEDIENTE';
+      }
+
       // Check break window if workingHours configured for this day
-      const spInfo = this.getSaoPauloHourMinute(requestedStart);
-      const whForDay = profWh.find((w: any) => Number(w.dayOfWeek) === spInfo.dayOfWeek);
-      if (whForDay && whForDay.breakStart && whForDay.breakEnd) {
-        const [bsH, bsM] = String(whForDay.breakStart).split(':').map(Number);
-        const [beH, beM] = String(whForDay.breakEnd).split(':').map(Number);
-        const breakStartMs = new Date(`${params.date}T${String(bsH).padStart(2, '0')}:${String(bsM || 0).padStart(2, '0')}:00-03:00`).getTime();
-        const breakEndMs = new Date(`${params.date}T${String(beH).padStart(2, '0')}:${String(beM || 0).padStart(2, '0')}:00-03:00`).getTime();
-        if (effectiveStart.getTime() < breakEndMs && effectiveEnd.getTime() > breakStartMs) {
-          available = false;
-          reason = 'INTERVALO_PROFISSIONAL';
+      if (available) {
+        const spInfo = this.getSaoPauloHourMinute(requestedStart);
+        const whForDay = profWh.find((w: any) => Number(w.dayOfWeek) === spInfo.dayOfWeek);
+        if (whForDay && whForDay.breakStart && whForDay.breakEnd) {
+          const [bsH, bsM] = String(whForDay.breakStart).split(':').map(Number);
+          const [beH, beM] = String(whForDay.breakEnd).split(':').map(Number);
+          const breakStartMs = new Date(`${params.date}T${String(bsH).padStart(2, '0')}:${String(bsM || 0).padStart(2, '0')}:00-03:00`).getTime();
+          const breakEndMs = new Date(`${params.date}T${String(beH).padStart(2, '0')}:${String(beM || 0).padStart(2, '0')}:00-03:00`).getTime();
+          if (effectiveStart.getTime() < breakEndMs && effectiveEnd.getTime() > breakStartMs) {
+            available = false;
+            reason = 'INTERVALO_PROFISSIONAL';
+          }
         }
       }
 
@@ -3413,6 +3426,7 @@ export const db = {
     }
 
     appointment.status = 'CONFIRMED';
+    appointment.paymentStatus = 'APPROVED';
     const pay = memoryStore.payments.find((p: any) => (paymentId ? p.id === paymentId : p.appointmentId === appointmentId));
     if (pay) {
       pay.status = 'APPROVED';
@@ -3446,7 +3460,7 @@ export const db = {
     };
   },
 
-  async recordAuditLog(tenantId: string, userId: string | null, action: string, details: any, ipAddress?: string) {
+  async recordAuditLog(tenantId: string | null, userId: string | null, action: string, details: any, ipAddress?: string) {
     const pool = getMySqlPool();
     if (pool) {
       try {
@@ -3455,7 +3469,7 @@ export const db = {
            VALUES (?, ?, ?, ?, ?, ?, NOW())`,
           [
             `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            tenantId,
+            tenantId || null,
             userId || null,
             action,
             details ? JSON.stringify(details) : null,
@@ -3466,7 +3480,7 @@ export const db = {
     }
     memoryStore.auditLogs.push({
       id: `audit-${Date.now()}`,
-      tenantId,
+      tenantId: tenantId || null,
       userId,
       action,
       details,

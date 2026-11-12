@@ -22355,14 +22355,14 @@ var require_etag = __commonJS({
   "node_modules/etag/index.js"(exports, module) {
     "use strict";
     module.exports = etag;
-    var crypto6 = __require("crypto");
+    var crypto8 = __require("crypto");
     var Stats = __require("fs").Stats;
     var toString = Object.prototype.toString;
     function entitytag(entity) {
       if (entity.length === 0) {
         return '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"';
       }
-      var hash3 = crypto6.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
+      var hash3 = crypto8.createHash("sha1").update(entity, "utf8").digest("base64").substring(0, 27);
       var len = typeof entity === "string" ? Buffer.byteLength(entity, "utf8") : entity.length;
       return '"' + len.toString(16) + "-" + hash3 + '"';
     }
@@ -25271,11 +25271,11 @@ var require_request = __commonJS({
 // node_modules/express/node_modules/cookie-signature/index.js
 var require_cookie_signature = __commonJS({
   "node_modules/express/node_modules/cookie-signature/index.js"(exports) {
-    var crypto6 = __require("crypto");
+    var crypto8 = __require("crypto");
     exports.sign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if (null == secret) throw new TypeError("Secret key must be provided.");
-      return val + "." + crypto6.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto8.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports.unsign = function(val, secret) {
       if ("string" !== typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -25284,7 +25284,7 @@ var require_cookie_signature = __commonJS({
       return sha1(mac3) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto6.createHash("sha1").update(str).digest("hex");
+      return crypto8.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -26533,11 +26533,11 @@ var require_lib4 = __commonJS({
 // node_modules/cookie-signature/index.js
 var require_cookie_signature2 = __commonJS({
   "node_modules/cookie-signature/index.js"(exports) {
-    var crypto6 = __require("crypto");
+    var crypto8 = __require("crypto");
     exports.sign = function(val, secret) {
       if ("string" != typeof val) throw new TypeError("Cookie value must be provided as a string.");
       if ("string" != typeof secret) throw new TypeError("Secret string must be provided.");
-      return val + "." + crypto6.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
+      return val + "." + crypto8.createHmac("sha256", secret).update(val).digest("base64").replace(/\=+$/, "");
     };
     exports.unsign = function(val, secret) {
       if ("string" != typeof val) throw new TypeError("Signed cookie string must be provided.");
@@ -26546,7 +26546,7 @@ var require_cookie_signature2 = __commonJS({
       return sha1(mac3) == sha1(val) ? str : false;
     };
     function sha1(str) {
-      return crypto6.createHash("sha1").update(str).digest("hex");
+      return crypto8.createHash("sha1").update(str).digest("hex");
     }
   }
 });
@@ -40145,9 +40145,9 @@ var require_client = __commonJS({
 var require_auth_41 = __commonJS({
   "node_modules/mysql2/lib/auth_41.js"(exports) {
     "use strict";
-    var crypto6 = __require("crypto");
+    var crypto8 = __require("crypto");
     function sha1(msg, msg1, msg2) {
-      const hash3 = crypto6.createHash("sha1");
+      const hash3 = crypto8.createHash("sha1");
       hash3.update(msg);
       if (msg1) {
         hash3.update(msg1);
@@ -42573,7 +42573,7 @@ var require_sha256_password = __commonJS({
   "node_modules/mysql2/lib/auth_plugins/sha256_password.js"(exports, module) {
     "use strict";
     var PLUGIN_NAME = "sha256_password";
-    var crypto6 = __require("crypto");
+    var crypto8 = __require("crypto");
     var { xorRotating } = require_auth_41();
     var Tls = __require("tls");
     var REQUEST_SERVER_KEY_PACKET = Buffer.from([1]);
@@ -42582,7 +42582,7 @@ var require_sha256_password = __commonJS({
     var STATE_FINAL = -1;
     function encrypt(password, scramble, key) {
       const stage1 = xorRotating(Buffer.from(`${password}\0`, "utf8"), scramble);
-      return crypto6.publicEncrypt(
+      return crypto8.publicEncrypt(
         {
           key,
           oaepHash: "sha1"
@@ -42634,7 +42634,7 @@ var require_caching_sha2_password = __commonJS({
   "node_modules/mysql2/lib/auth_plugins/caching_sha2_password.js"(exports, module) {
     "use strict";
     var PLUGIN_NAME = "caching_sha2_password";
-    var crypto6 = __require("crypto");
+    var crypto8 = __require("crypto");
     var { xor: xor2, xorRotating } = require_auth_41();
     var REQUEST_SERVER_KEY_PACKET = Buffer.from([2]);
     var FAST_AUTH_SUCCESS_PACKET = Buffer.from([3]);
@@ -42644,7 +42644,7 @@ var require_caching_sha2_password = __commonJS({
     var STATE_WAIT_SERVER_KEY = 2;
     var STATE_FINAL = -1;
     function sha256(msg) {
-      const hash3 = crypto6.createHash("sha256");
+      const hash3 = crypto8.createHash("sha256");
       hash3.update(msg);
       return hash3.digest();
     }
@@ -42659,11 +42659,11 @@ var require_caching_sha2_password = __commonJS({
     }
     function encrypt(password, scramble, key) {
       const stage1 = xorRotating(Buffer.from(`${password}\0`, "utf8"), scramble);
-      return crypto6.publicEncrypt(
+      return crypto8.publicEncrypt(
         {
           key,
           oaepHash: "sha1",
-          padding: crypto6.constants.RSA_PKCS1_OAEP_PADDING
+          padding: crypto8.constants.RSA_PKCS1_OAEP_PADDING
         },
         stage1
       );
@@ -49127,7 +49127,7 @@ var require_main = __commonJS({
     var fs2 = __require("fs");
     var path3 = __require("path");
     var os = __require("os");
-    var crypto6 = __require("crypto");
+    var crypto8 = __require("crypto");
     var TIPS = [
       "\u25C8 encrypted .env [www.dotenvx.com]",
       "\u25C8 secrets for agents [www.dotenvx.com]",
@@ -49371,7 +49371,7 @@ var require_main = __commonJS({
       const authTag = ciphertext.subarray(-16);
       ciphertext = ciphertext.subarray(12, -16);
       try {
-        const aesgcm = crypto6.createDecipheriv("aes-256-gcm", key, nonce);
+        const aesgcm = crypto8.createDecipheriv("aes-256-gcm", key, nonce);
         aesgcm.setAuthTag(authTag);
         return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
       } catch (error62) {
@@ -49658,7 +49658,7 @@ function getMySqlPool() {
   }
   if (pool) return pool;
   let rawEnvUrl = inTests && process.env.ALLOW_DB_INTEGRATION_TESTS === "true" ? process.env.TEST_DATABASE_URL || process.env.DATABASE_URL : process.env.DATABASE_URL;
-  if (!rawEnvUrl && !inTests) {
+  if (rawEnvUrl === void 0 && !inTests && !strict) {
     rawEnvUrl = DEFAULT_HOSTINGER_DB_URL;
     process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
   }
@@ -49929,7 +49929,7 @@ var init_mysql = __esm({
       import_dotenv.default.config({ override: false });
     }
     DEFAULT_HOSTINGER_DB_URL = "mysql://u117523286_Skayiuoep:8cJL%3A%600KI%7CP8jFg7%60Q%26%2F@srv1661.hstgr.io:3306/u117523286_agendOnline";
-    if (!process.env.DATABASE_URL && process.env.NODE_ENV !== "test" && process.env.AGENDA_TEST_MODE !== "1") {
+    if (process.env.DATABASE_URL === void 0 && process.env.NODE_ENV !== "test" && process.env.AGENDA_TEST_MODE !== "1") {
       process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
     }
     PRODUCTION_DB_PROTECTED_TOKENS = [
@@ -51130,9 +51130,16 @@ var init_storage = __esm({
       async checkProfessionalFutureConflicts(tenantId, professionalId, newActive, newWorkingHours) {
         const now = /* @__PURE__ */ new Date();
         const allApps = await this.getAppointments(tenantId);
-        const futureApps = allApps.filter(
-          (a) => a.professionalId === professionalId && ["PENDING_PAYMENT", "PENDING", "CONFIRMED", "IN_PROGRESS"].includes(a.status) && new Date(a.dateTime) > now
-        );
+        const futureApps = allApps.filter((a) => {
+          if (a.professionalId !== professionalId) return false;
+          if (!["PENDING_PAYMENT", "PENDING", "CONFIRMED", "IN_PROGRESS"].includes(a.status)) return false;
+          if (new Date(a.dateTime) <= now) return false;
+          if (a.status === "PENDING_PAYMENT") {
+            if (a.expiresAt && new Date(a.expiresAt) < now) return false;
+            if (!a.expiresAt && a.createdAt && now.getTime() - new Date(a.createdAt).getTime() > 10 * 6e4) return false;
+          }
+          return true;
+        });
         if (newActive === false && futureApps.length > 0) {
           return futureApps;
         }
@@ -51337,6 +51344,11 @@ var init_storage = __esm({
         const appointments = await this.getAppointments(tenantId);
         const overlappingAppointments = appointments.filter((app) => {
           if (!["PENDING_PAYMENT", "PENDING", "CONFIRMED", "IN_PROGRESS"].includes(app.status)) return false;
+          if (app.status === "PENDING_PAYMENT") {
+            const now2 = /* @__PURE__ */ new Date();
+            if (app.expiresAt && new Date(app.expiresAt) < now2) return false;
+            if (!app.expiresAt && app.createdAt && now2.getTime() - new Date(app.createdAt).getTime() > 10 * 6e4) return false;
+          }
           if (data.professionalId && app.professionalId !== data.professionalId) return false;
           const appStart = new Date(app.dateTime).getTime();
           const appEnd = new Date(app.endDateTime || new Date(appStart + 60 * 6e4)).getTime();
@@ -51888,7 +51900,7 @@ var init_storage = __esm({
         if (pool2) {
           try {
             await executeWithRetry(
-              `UPDATE Appointment SET status = 'EXPIRED' WHERE tenantId = ? AND status = 'PENDING_PAYMENT' AND expiresAt < NOW()`,
+              `UPDATE Appointment SET status = 'EXPIRED' WHERE tenantId = ? AND status = 'PENDING_PAYMENT' AND (expiresAt < NOW() OR (expiresAt IS NULL AND createdAt < DATE_SUB(NOW(), INTERVAL 10 MINUTE)))`,
               [tenantId]
             );
             const [rows] = await queryWithRetry(
@@ -52003,10 +52015,14 @@ var init_storage = __esm({
         const prepMin = Number(service.preparationMin || 0);
         const totalDurationMin = Number(service.durationMin || 60) + Number(service.bufferBeforeMin || 0) + Number(service.bufferAfterMin || 0);
         const now = /* @__PURE__ */ new Date();
-        const activeApps = memoryStore.appointments.filter((a) => {
+        const allApps = await this.getAppointments(tenantId);
+        const activeApps = allApps.filter((a) => {
           if (a.tenantId !== tenantId || a.professionalId !== params.professionalId) return false;
           if (!["PENDING_PAYMENT", "PENDING", "CONFIRMED", "IN_PROGRESS"].includes(a.status)) return false;
-          if (a.status === "PENDING_PAYMENT" && a.expiresAt && new Date(a.expiresAt) < now) return false;
+          if (a.status === "PENDING_PAYMENT") {
+            if (a.expiresAt && new Date(a.expiresAt) < now) return false;
+            if (!a.expiresAt && a.createdAt && now.getTime() - new Date(a.createdAt).getTime() > 10 * 6e4) return false;
+          }
           return true;
         });
         const activeBlocks = memoryStore.timeBlocks.filter(
@@ -52081,8 +52097,18 @@ var init_storage = __esm({
         const suggestions = [];
         const baseTime = requestedDateTime.getTime();
         const offsetsMinutes = [30, 60, -60, 90, 120, 150, 180, 240];
-        const allApps = memoryStore.appointments.filter(
-          (a) => a.tenantId === tenantId && a.professionalId === professionalId && ["PENDING_PAYMENT", "PENDING", "CONFIRMED", "IN_PROGRESS"].includes(a.status)
+        const rawApps = await this.getAppointments(tenantId);
+        const now = /* @__PURE__ */ new Date();
+        const allApps = rawApps.filter(
+          (a) => {
+            if (a.tenantId !== tenantId || a.professionalId !== professionalId) return false;
+            if (!["PENDING_PAYMENT", "PENDING", "CONFIRMED", "IN_PROGRESS"].includes(a.status)) return false;
+            if (a.status === "PENDING_PAYMENT") {
+              if (a.expiresAt && new Date(a.expiresAt) < now) return false;
+              if (!a.expiresAt && a.createdAt && now.getTime() - new Date(a.createdAt).getTime() > 10 * 6e4) return false;
+            }
+            return true;
+          }
         );
         const blocks = memoryStore.timeBlocks.filter(
           (tb) => tb.tenantId === tenantId && (!tb.professionalId || tb.professionalId === professionalId)
@@ -52206,7 +52232,7 @@ var init_storage = __esm({
             conn = await getConnectionWithRetry();
             await conn.beginTransaction();
             await conn.execute(
-              `UPDATE Appointment SET status = 'EXPIRED' WHERE tenantId = ? AND status = 'PENDING_PAYMENT' AND expiresAt < NOW()`,
+              `UPDATE Appointment SET status = 'EXPIRED' WHERE tenantId = ? AND status = 'PENDING_PAYMENT' AND (expiresAt < NOW() OR (expiresAt IS NULL AND createdAt < DATE_SUB(NOW(), INTERVAL 10 MINUTE)))`,
               [tenantId]
             );
             const [conflicts] = await conn.query(
@@ -52281,7 +52307,10 @@ var init_storage = __esm({
         const overlapping = memoryStore.appointments.find((app) => {
           if (app.professionalId !== data.professionalId) return false;
           if (!["PENDING_PAYMENT", "CONFIRMED", "PENDING", "IN_PROGRESS"].includes(app.status)) return false;
-          if (app.status === "PENDING_PAYMENT" && app.expiresAt && new Date(app.expiresAt) < now) return false;
+          if (app.status === "PENDING_PAYMENT") {
+            if (app.expiresAt && new Date(app.expiresAt) < now) return false;
+            if (!app.expiresAt && app.createdAt && now.getTime() - new Date(app.createdAt).getTime() > 10 * 6e4) return false;
+          }
           const appStart = new Date(app.dateTime).getTime();
           const appEnd = new Date(app.endDateTime).getTime();
           return startDateTime.getTime() < appEnd && endDateTime.getTime() > appStart;
@@ -52426,6 +52455,11 @@ var init_storage = __esm({
           if (a.id === id) return false;
           if (a.professionalId !== targetProfessionalId) return false;
           if (!["PENDING_PAYMENT", "PENDING", "CONFIRMED", "IN_PROGRESS"].includes(a.status)) return false;
+          if (a.status === "PENDING_PAYMENT") {
+            const now2 = /* @__PURE__ */ new Date();
+            if (a.expiresAt && new Date(a.expiresAt) < now2) return false;
+            if (!a.expiresAt && a.createdAt && now2.getTime() - new Date(a.createdAt).getTime() > 10 * 6e4) return false;
+          }
           const aStart = new Date(a.dateTime).getTime();
           const aEnd = new Date(a.endDateTime || new Date(aStart + 60 * 6e4)).getTime();
           return targetStart.getTime() < aEnd && targetEnd.getTime() > aStart;
@@ -52993,6 +53027,7 @@ var init_storage = __esm({
           throw new Error("Conflito de agendamento: hor\xE1rio j\xE1 concedido a outra reserva confirmada.");
         }
         appointment.status = "CONFIRMED";
+        appointment.paymentStatus = "APPROVED";
         const pay = memoryStore.payments.find((p) => paymentId ? p.id === paymentId : p.appointmentId === appointmentId);
         if (pay) {
           pay.status = "APPROVED";
@@ -53032,7 +53067,7 @@ var init_storage = __esm({
            VALUES (?, ?, ?, ?, ?, ?, NOW())`,
               [
                 `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-                tenantId,
+                tenantId || null,
                 userId || null,
                 action,
                 details ? JSON.stringify(details) : null,
@@ -53044,7 +53079,7 @@ var init_storage = __esm({
         }
         memoryStore.auditLogs.push({
           id: `audit-${Date.now()}`,
-          tenantId,
+          tenantId: tenantId || null,
           userId,
           action,
           details,
@@ -54817,6 +54852,240 @@ var init_saasService = __esm({
           }
           return true;
         });
+      },
+      async deleteTenant(params) {
+        this.ensureSaaSSeedData();
+        lastFullSyncTimestamp = 0;
+        await this.syncTenantsFromMySql();
+        const store = memoryStore;
+        const tenantId = String(params.tenantId || "").trim();
+        if (!tenantId) {
+          const err = new Error("ID do estabelecimento inv\xE1lido.");
+          err.statusCode = 400;
+          throw err;
+        }
+        let tenant = store.tenants.find((t) => t.id === tenantId);
+        const pool2 = getMySqlPool();
+        if (!tenant && pool2) {
+          try {
+            const [rows] = await queryWithRetry(`SELECT * FROM Tenant WHERE id = ? LIMIT 1`, [tenantId]);
+            if (Array.isArray(rows) && rows.length > 0) {
+              tenant = rows[0];
+            }
+          } catch (e) {
+            handleDbFallbackError("deleteTenantLookup", e);
+          }
+        }
+        if (!tenant) {
+          const err = new Error("Estabelecimento n\xE3o encontrado.");
+          err.statusCode = 404;
+          throw err;
+        }
+        const tenantName = String(tenant.name || tenantId);
+        const tenantSlug = String(tenant.slug || "");
+        const reason = String(params.reason || "").trim() || "Exclus\xE3o permanente solicitada pelo Super Admin";
+        const candidateUserIds = /* @__PURE__ */ new Set();
+        const deletedProfIds = /* @__PURE__ */ new Set();
+        for (const tm of store.tenantMembers || []) {
+          if (tm.tenantId === tenantId && tm.userId) {
+            candidateUserIds.add(tm.userId);
+          }
+        }
+        for (const u of store.users || []) {
+          if (u.tenantId === tenantId && !u.isMasterAdmin && u.role !== "SUPER_ADMIN" && u.role !== "CUSTOMER" && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br") {
+            candidateUserIds.add(u.id);
+          }
+        }
+        for (const p of store.professionals || []) {
+          if (p.tenantId === tenantId && p.id) {
+            deletedProfIds.add(p.id);
+          }
+        }
+        const removedOrphanedUsers = [];
+        if (pool2) {
+          let conn = null;
+          try {
+            conn = await getConnectionWithRetry();
+            await conn.beginTransaction();
+            const [tmRows] = await conn.query(
+              `SELECT userId FROM TenantMember WHERE tenantId = ?`,
+              [tenantId]
+            );
+            if (Array.isArray(tmRows)) {
+              for (const row of tmRows) {
+                if (row?.userId) candidateUserIds.add(row.userId);
+              }
+            }
+            const [profRows] = await conn.query(
+              `SELECT id FROM Professional WHERE tenantId = ?`,
+              [tenantId]
+            );
+            if (Array.isArray(profRows)) {
+              for (const row of profRows) {
+                if (row?.id) deletedProfIds.add(row.id);
+              }
+            }
+            const [delRes] = await conn.execute(`DELETE FROM Tenant WHERE id = ?`, [tenantId]);
+            if (!delRes || Number(delRes.affectedRows || 0) === 0) {
+            }
+            for (const uid of candidateUserIds) {
+              if (!uid || uid === params.actorId || uid === "user-master-1") continue;
+              const [uRows] = await conn.query(
+                `SELECT id, email FROM User WHERE id = ? LIMIT 1`,
+                [uid]
+              );
+              const dbUser = Array.isArray(uRows) && uRows.length > 0 ? uRows[0] : null;
+              const memUser = (store.users || []).find((u) => u.id === uid);
+              const emailLower = String(dbUser?.email || memUser?.email || "").toLowerCase();
+              if (!dbUser || emailLower === "master@agendabeauty.com.br" || memUser?.isMasterAdmin || memUser?.role === "SUPER_ADMIN" || memUser?.role === "CUSTOMER" || String(uid).startsWith("user-cust-")) {
+                continue;
+              }
+              const [remTmRows] = await conn.query(
+                `SELECT COUNT(*) as cnt FROM TenantMember WHERE userId = ?`,
+                [uid]
+              );
+              const remTm = Number(remTmRows?.[0]?.cnt || 0);
+              if (remTm > 0) continue;
+              const [remCliRows] = await conn.query(
+                `SELECT COUNT(*) as cnt FROM Client WHERE (email IS NOT NULL AND LOWER(email) = LOWER(?)) OR notes LIKE ?`,
+                [emailLower, `%userId:${uid}%`]
+              );
+              const remCli = Number(remCliRows?.[0]?.cnt || 0);
+              if (remCli > 0) continue;
+              await conn.execute(
+                `DELETE FROM User WHERE id = ? AND LOWER(email) <> 'master@agendabeauty.com.br'`,
+                [uid]
+              );
+              removedOrphanedUsers.push(uid);
+            }
+            await conn.commit();
+            invalidateQueryCache();
+          } catch (e) {
+            if (conn) {
+              try {
+                await conn.rollback();
+              } catch {
+              }
+            }
+            handleDbFallbackError("deleteTenant", e);
+          } finally {
+            if (conn) {
+              try {
+                conn.release();
+              } catch {
+              }
+            }
+          }
+        }
+        const filterByTenant = (arrName) => {
+          if (Array.isArray(store[arrName])) {
+            store[arrName] = store[arrName].filter((item) => item?.tenantId !== tenantId);
+          }
+        };
+        store.tenants = (store.tenants || []).filter((t) => t.id !== tenantId);
+        const tenantScopedArrays = [
+          "subscriptions",
+          "saasInvoices",
+          "tenantMembers",
+          "professionals",
+          "timeBlocks",
+          "services",
+          "clients",
+          "appointments",
+          "payments",
+          "notifications",
+          "cancellationRequests",
+          "refundRequests",
+          "expenses",
+          "financialTransactions",
+          "commissionRules",
+          "commissionRecords",
+          "whatsappConfigs",
+          "whatsappTemplates",
+          "whatsappMessages",
+          "whatsappReminders",
+          "whatsappWebhookEvents",
+          "businessLocations",
+          "waitlistEntries",
+          "waitlistOffers",
+          "loyaltyPrograms",
+          "loyaltyRewards",
+          "loyaltyLedgers",
+          "coupons",
+          "couponRedemptions",
+          "servicePackages",
+          "customerPackages",
+          "packageUsageLedgers",
+          "giftCards",
+          "giftCardTransactions",
+          "serviceReviews",
+          "marketingCampaigns",
+          "campaignRecipients",
+          "inventoryProducts",
+          "inventoryMovements"
+        ];
+        for (const arrName of tenantScopedArrays) {
+          filterByTenant(arrName);
+        }
+        if (Array.isArray(store.workingHours) && deletedProfIds.size > 0) {
+          store.workingHours = store.workingHours.filter(
+            (wh) => !deletedProfIds.has(wh?.professionalId)
+          );
+        }
+        store.users = (store.users || []).reduce((acc, u) => {
+          const isProtected = Boolean(u.isMasterAdmin) || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "master@agendabeauty.com.br" || u.id === params.actorId || u.id === "user-master-1";
+          if (isProtected) {
+            if (u.tenantId === tenantId) {
+              const fallbackTenant = (store.tenants || [])[0]?.id || "biz-1";
+              acc.push({ ...u, tenantId: fallbackTenant });
+            } else {
+              acc.push(u);
+            }
+            return acc;
+          }
+          const remainingMembership = (store.tenantMembers || []).find((tm) => tm.userId === u.id);
+          const hasRemainingClientProfile = (store.clients || []).some(
+            (c) => c.userId === u.id || u.email && String(c.email || "").toLowerCase() === String(u.email || "").toLowerCase() || String(c.notes || "").includes(`userId:${u.id}`)
+          );
+          const wasLinkedToDeletedTenant = candidateUserIds.has(u.id) || u.tenantId === tenantId || removedOrphanedUsers.includes(u.id);
+          if (wasLinkedToDeletedTenant) {
+            if (remainingMembership) {
+              acc.push({
+                ...u,
+                tenantId: remainingMembership.tenantId,
+                role: remainingMembership.role || u.role
+              });
+              return acc;
+            }
+            if (u.role === "CUSTOMER" || hasRemainingClientProfile) {
+              const nextTenant = (store.clients || []).find((c) => c.userId === u.id)?.tenantId || u.tenantId;
+              acc.push({ ...u, tenantId: nextTenant });
+              return acc;
+            }
+            return acc;
+          }
+          acc.push(u);
+          return acc;
+        }, []);
+        if (Array.isArray(store.auditLogs)) {
+          store.auditLogs = store.auditLogs.map(
+            (log) => log.tenantId === tenantId ? { ...log, tenantId: null } : log
+          );
+        }
+        lastFullSyncTimestamp = 0;
+        await db.recordAuditLog(null, params.actorId, "SAAS_TENANT_DELETED", {
+          deletedTenantId: tenantId,
+          deletedTenantName: tenantName,
+          deletedTenantSlug: tenantSlug,
+          reason,
+          removedUsersCount: removedOrphanedUsers.length
+        });
+        return {
+          deletedTenantId: tenantId,
+          deletedTenantName: tenantName,
+          deletedTenantSlug: tenantSlug,
+          reason
+        };
       }
     };
   }
@@ -62338,7 +62607,7 @@ var require_lib9 = __commonJS({
 });
 
 // src/server/payments/MercadoPagoPaymentProvider.ts
-import crypto2 from "crypto";
+import crypto4 from "crypto";
 var import_qrcode, MercadoPagoPaymentProvider;
 var init_MercadoPagoPaymentProvider = __esm({
   "src/server/payments/MercadoPagoPaymentProvider.ts"() {
@@ -62580,13 +62849,13 @@ var init_MercadoPagoPaymentProvider = __esm({
         const requestId = params.xRequestId || params.requestIdHeader || "";
         const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
         try {
-          const hmac = crypto2.createHmac("sha256", this.webhookSecret);
+          const hmac = crypto4.createHmac("sha256", this.webhookSecret);
           hmac.update(manifest);
           const calculatedHash = hmac.digest("hex");
           if (calculatedHash.length !== hash3.length) {
             return false;
           }
-          return crypto2.timingSafeEqual(Buffer.from(calculatedHash), Buffer.from(hash3));
+          return crypto4.timingSafeEqual(Buffer.from(calculatedHash), Buffer.from(hash3));
         } catch (e) {
           console.error("[MercadoPago] Erro ao validar assinatura do webhook:", e);
           return false;
@@ -63551,7 +63820,10 @@ var init_cancellationService = __esm({
           if (app.id === appointmentId) return false;
           if (app.professionalId !== appointment.professionalId) return false;
           if (!["PENDING_PAYMENT", "CONFIRMED", "PENDING"].includes(app.status)) return false;
-          if (app.status === "PENDING_PAYMENT" && app.expiresAt && new Date(app.expiresAt) < evaluationTime) return false;
+          if (app.status === "PENDING_PAYMENT") {
+            if (app.expiresAt && new Date(app.expiresAt) < evaluationTime) return false;
+            if (!app.expiresAt && app.createdAt && evaluationTime.getTime() - new Date(app.createdAt).getTime() > 10 * 6e4) return false;
+          }
           const start = new Date(app.dateTime).getTime();
           const end = new Date(app.endDateTime).getTime();
           return parsedNewStart.getTime() < end && parsedNewEnd.getTime() > start;
@@ -83522,6 +83794,395 @@ ${urlEntries}
 // src/server/middleware/auth.ts
 init_storage();
 init_saasService();
+import crypto3 from "crypto";
+
+// src/server/middleware/antiBot.ts
+init_storage();
+import crypto2 from "crypto";
+var DEFAULT_FALLBACK_SECRET = crypto2.createHash("sha256").update(`agenda-beauty-antibot-${process.env.SESSION_SECRET || "hostinger-local-dev-secret-2026"}`).digest("hex");
+function getSecuritySecret() {
+  const envSecret = String(process.env.SESSION_SECRET || "").trim();
+  if (envSecret.length >= 16) return envSecret;
+  return DEFAULT_FALLBACK_SECRET;
+}
+var DISPOSABLE_EMAIL_DOMAINS = /* @__PURE__ */ new Set([
+  "mailinator.com",
+  "yopmail.com",
+  "yopmail.fr",
+  "10minutemail.com",
+  "10minutemail.net",
+  "guerrillamail.com",
+  "guerrillamail.org",
+  "guerrillamailblock.com",
+  "sharklasers.com",
+  "tempmail.com",
+  "temp-mail.org",
+  "temp-mail.io",
+  "trashmail.com",
+  "throwawaymail.com",
+  "dispostable.com",
+  "getnada.com",
+  "fakeinbox.com",
+  "maildrop.cc",
+  "mintemail.com",
+  "emailondeck.com"
+]);
+var SUSPICIOUS_BOT_UA_PATTERNS = [
+  /sqlmap/i,
+  /nikto/i,
+  /masscan/i,
+  /nmap/i,
+  /scrapy/i,
+  /python-requests/i,
+  /python-urllib/i,
+  /aiohttp/i,
+  /go-http-client/i,
+  /libwww-perl/i,
+  /wget/i,
+  /curl\//i,
+  /headlesschrome/i,
+  /phantomjs/i,
+  /selenium/i,
+  /puppeteer/i,
+  /playwright/i
+];
+var HONEYPOT_FIELD_NAMES = [
+  "website",
+  "companyWebsite",
+  "companyUrl",
+  "hp_field",
+  "hpField",
+  "_hp",
+  "honeypot",
+  "faxNumber"
+];
+var consumedChallengeNonces = /* @__PURE__ */ new Map();
+var loginAttemptsByKey = /* @__PURE__ */ new Map();
+var MAX_FAILED_LOGIN_ATTEMPTS = 5;
+var LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1e3;
+var LOGIN_LOCKOUT_DURATION_MS = 15 * 60 * 1e3;
+var CHALLENGE_TTL_MS = 10 * 60 * 1e3;
+var MIN_HUMAN_SUBMIT_MS = 400;
+function pruneExpiredState() {
+  const now = Date.now();
+  for (const [nonce, expiresAt] of consumedChallengeNonces.entries()) {
+    if (now > expiresAt) {
+      consumedChallengeNonces.delete(nonce);
+    }
+  }
+  for (const [key, rec] of loginAttemptsByKey.entries()) {
+    if (now > rec.lockedUntil && now - rec.firstFailureAt > LOGIN_ATTEMPT_WINDOW_MS) {
+      loginAttemptsByKey.delete(key);
+    }
+  }
+}
+function extractClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+  if (Array.isArray(forwarded) && forwarded.length > 0) {
+    return String(forwarded[0]).trim();
+  }
+  return String(req.headers["client-ip"] || req.ip || req.socket?.remoteAddress || "127.0.0.1").trim();
+}
+function signHmac(data) {
+  return crypto2.createHmac("sha256", getSecuritySecret()).update(data).digest("hex");
+}
+function createBotChallenge() {
+  pruneExpiredState();
+  const a = crypto2.randomInt(1, 10);
+  const b = crypto2.randomInt(1, 10);
+  const answer = String(a + b);
+  const nonce = crypto2.randomUUID();
+  const issuedAt = Date.now();
+  const expiresAt = issuedAt + CHALLENGE_TTL_MS;
+  const answerHash = crypto2.createHmac("sha256", getSecuritySecret()).update(`${nonce}:${answer}`).digest("hex");
+  const payload = {
+    nonce,
+    answerHash,
+    issuedAt,
+    expiresAt
+  };
+  const payloadB64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const sig = signHmac(payloadB64);
+  return {
+    challengeToken: `${payloadB64}.${sig}`,
+    question: `Quanto \xE9 ${a} + ${b}?`,
+    expiresInSeconds: Math.floor(CHALLENGE_TTL_MS / 1e3)
+  };
+}
+function verifyBotChallenge(challengeToken, rawAnswer, options) {
+  pruneExpiredState();
+  if (!challengeToken || typeof challengeToken !== "string" || !challengeToken.includes(".")) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_REQUIRED",
+      error: "Complete a verifica\xE7\xE3o anti-bot antes de enviar."
+    };
+  }
+  const parts = challengeToken.split(".");
+  if (parts.length !== 2) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_INVALID",
+      error: "Token de verifica\xE7\xE3o anti-bot inv\xE1lido."
+    };
+  }
+  const [payloadB64, providedSig] = parts;
+  const expectedSig = signHmac(payloadB64);
+  const sigBuf = Buffer.from(providedSig, "utf8");
+  const expectedBuf = Buffer.from(expectedSig, "utf8");
+  if (sigBuf.length !== expectedBuf.length || !crypto2.timingSafeEqual(sigBuf, expectedBuf)) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_TAMPERED",
+      error: "Falha na integridade da verifica\xE7\xE3o anti-bot."
+    };
+  }
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+  } catch {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_INVALID",
+      error: "Desafio anti-bot malformado."
+    };
+  }
+  const now = Date.now();
+  if (!payload?.nonce || !payload?.expiresAt || now > Number(payload.expiresAt)) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_EXPIRED",
+      error: "A verifica\xE7\xE3o anti-bot expirou. Atualize o desafio e tente novamente."
+    };
+  }
+  if (consumedChallengeNonces.has(payload.nonce)) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_REPLAYED",
+      error: "Este desafio anti-bot j\xE1 foi utilizado. Solicite um novo desafio."
+    };
+  }
+  if (options?.enforceTiming && payload.issuedAt && now - Number(payload.issuedAt) < MIN_HUMAN_SUBMIT_MS) {
+    return {
+      valid: false,
+      code: "BOT_TIMING_VIOLATION",
+      error: "Envio automatizado detectado (submiss\xE3o r\xE1pida demais). Aguarde um instante e tente novamente."
+    };
+  }
+  const cleanAnswer = String(rawAnswer ?? "").trim();
+  if (!cleanAnswer) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_ANSWER_MISSING",
+      error: "Responda \xE0 verifica\xE7\xE3o matem\xE1tica anti-bot."
+    };
+  }
+  const expectedAnswerHash = crypto2.createHmac("sha256", getSecuritySecret()).update(`${payload.nonce}:${cleanAnswer}`).digest("hex");
+  const ansBuf = Buffer.from(expectedAnswerHash, "utf8");
+  const targetBuf = Buffer.from(String(payload.answerHash || ""), "utf8");
+  if (ansBuf.length !== targetBuf.length || !crypto2.timingSafeEqual(ansBuf, targetBuf)) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_INCORRECT",
+      error: "Resposta da verifica\xE7\xE3o anti-bot incorreta. Tente novamente."
+    };
+  }
+  if (options?.consumeNonce !== false) {
+    consumedChallengeNonces.set(payload.nonce, Number(payload.expiresAt));
+  }
+  return { valid: true };
+}
+function isDisposableEmail(email3) {
+  const parts = String(email3 || "").trim().toLowerCase().split("@");
+  if (parts.length !== 2) return false;
+  const domain2 = parts[1];
+  return DISPOSABLE_EMAIL_DOMAINS.has(domain2);
+}
+function hasBotLikeNameOrContent(name) {
+  const val = String(name || "").trim();
+  if (!val) return false;
+  if (/https?:\/\/|www\./i.test(val)) return true;
+  if (/<[^>]+>|script|javascript:/i.test(val)) return true;
+  return false;
+}
+function checkLoginLockout(req, email3) {
+  pruneExpiredState();
+  const ip = extractClientIp(req);
+  const cleanEmail = String(email3 || "").trim().toLowerCase();
+  const key = `${ip}:${cleanEmail}`;
+  const rec = loginAttemptsByKey.get(key);
+  const now = Date.now();
+  if (rec && rec.lockedUntil > now) {
+    return {
+      locked: true,
+      retryAfterSec: Math.max(1, Math.ceil((rec.lockedUntil - now) / 1e3))
+    };
+  }
+  return { locked: false, retryAfterSec: 0 };
+}
+function recordFailedLoginAttempt(req, email3) {
+  pruneExpiredState();
+  const ip = extractClientIp(req);
+  const cleanEmail = String(email3 || "").trim().toLowerCase();
+  const key = `${ip}:${cleanEmail}`;
+  const now = Date.now();
+  let rec = loginAttemptsByKey.get(key);
+  if (!rec || now - rec.firstFailureAt > LOGIN_ATTEMPT_WINDOW_MS) {
+    rec = { failures: 0, firstFailureAt: now, lockedUntil: 0 };
+  }
+  rec.failures += 1;
+  if (rec.failures >= MAX_FAILED_LOGIN_ATTEMPTS) {
+    rec.lockedUntil = now + LOGIN_LOCKOUT_DURATION_MS;
+    loginAttemptsByKey.set(key, rec);
+    db.recordAuditLog(
+      null,
+      null,
+      "SECURITY_LOGIN_LOCKOUT",
+      {
+        email: cleanEmail,
+        failures: rec.failures,
+        lockoutSeconds: Math.floor(LOGIN_LOCKOUT_DURATION_MS / 1e3)
+      },
+      ip
+    ).catch(() => {
+    });
+    return {
+      lockedNow: true,
+      remainingAttempts: 0,
+      retryAfterSec: Math.floor(LOGIN_LOCKOUT_DURATION_MS / 1e3)
+    };
+  }
+  loginAttemptsByKey.set(key, rec);
+  return {
+    lockedNow: false,
+    remainingAttempts: MAX_FAILED_LOGIN_ATTEMPTS - rec.failures,
+    retryAfterSec: 0
+  };
+}
+function clearFailedLoginAttempts(req, email3) {
+  const ip = extractClientIp(req);
+  const cleanEmail = String(email3 || "").trim().toLowerCase();
+  loginAttemptsByKey.delete(`${ip}:${cleanEmail}`);
+}
+function antiBotGuard(options) {
+  return async (req, res, next) => {
+    const body = req.body || {};
+    const botGuard = typeof body.botGuard === "object" && body.botGuard !== null ? body.botGuard : {};
+    const ip = extractClientIp(req);
+    const ua = String(req.headers["user-agent"] || "");
+    const isTestMode = process.env.NODE_ENV === "test" || process.env.AGENDA_TEST_MODE === "1";
+    const enforceStrictChallenge = !isTestMode || req.headers["x-enforce-antibot"] === "true" || Boolean(botGuard.challengeToken);
+    for (const field of HONEYPOT_FIELD_NAMES) {
+      const val = body[field] ?? botGuard[field];
+      if (val !== void 0 && val !== null && String(val).trim() !== "") {
+        await db.recordAuditLog(
+          null,
+          null,
+          "SECURITY_BOT_HONEYPOT_TRIGGERED",
+          { path: req.originalUrl, field, ua: ua.slice(0, 120) },
+          ip
+        ).catch(() => {
+        });
+        return res.status(403).json({
+          success: false,
+          code: "BOT_DETECTED",
+          error: "Solicita\xE7\xE3o bloqueada pela prote\xE7\xE3o anti-bot."
+        });
+      }
+    }
+    if (!isTestMode || req.headers["x-enforce-antibot"] === "true") {
+      if (!ua || SUSPICIOUS_BOT_UA_PATTERNS.some((re) => re.test(ua))) {
+        await db.recordAuditLog(
+          null,
+          null,
+          "SECURITY_BOT_USER_AGENT_BLOCKED",
+          { path: req.originalUrl, ua: ua.slice(0, 160) },
+          ip
+        ).catch(() => {
+        });
+        return res.status(403).json({
+          success: false,
+          code: "BOT_USER_AGENT_BLOCKED",
+          error: "Acesso automatizado n\xE3o autorizado por este endpoint."
+        });
+      }
+    }
+    if (options.mode === "register") {
+      const email3 = String(body.email || "").trim();
+      const name = String(body.name || "").trim();
+      if (email3 && isDisposableEmail(email3)) {
+        await db.recordAuditLog(
+          null,
+          null,
+          "SECURITY_BOT_DISPOSABLE_EMAIL_BLOCKED",
+          { email: email3 },
+          ip
+        ).catch(() => {
+        });
+        return res.status(400).json({
+          success: false,
+          code: "DISPOSABLE_EMAIL_BLOCKED",
+          error: "E-mails tempor\xE1rios ou descart\xE1veis n\xE3o s\xE3o permitidos para cadastro."
+        });
+      }
+      if (name && hasBotLikeNameOrContent(name)) {
+        await db.recordAuditLog(
+          null,
+          null,
+          "SECURITY_BOT_SPAM_PAYLOAD_BLOCKED",
+          { name: name.slice(0, 80) },
+          ip
+        ).catch(() => {
+        });
+        return res.status(400).json({
+          success: false,
+          code: "INVALID_BOT_PAYLOAD",
+          error: "O nome informado cont\xE9m caracteres ou links n\xE3o permitidos."
+        });
+      }
+    }
+    const formRenderedAt = Number(botGuard.formRenderedAt || body.formRenderedAt || 0);
+    if (enforceStrictChallenge && formRenderedAt > 0) {
+      const elapsed = Date.now() - formRenderedAt;
+      if (elapsed < MIN_HUMAN_SUBMIT_MS) {
+        return res.status(403).json({
+          success: false,
+          code: "BOT_TIMING_VIOLATION",
+          error: "Envio r\xE1pido demais detectado. Aguarde um segundo e tente novamente."
+        });
+      }
+    }
+    const challengeToken = botGuard.challengeToken ?? body.challengeToken;
+    const challengeAnswer = botGuard.challengeAnswer ?? body.challengeAnswer;
+    if (enforceStrictChallenge) {
+      const check2 = verifyBotChallenge(challengeToken, challengeAnswer, {
+        enforceTiming: true,
+        consumeNonce: true
+      });
+      if (!check2.valid) {
+        await db.recordAuditLog(
+          null,
+          null,
+          "SECURITY_BOT_CHALLENGE_FAILED",
+          { path: req.originalUrl, code: check2.code },
+          ip
+        ).catch(() => {
+        });
+        return res.status(403).json({
+          success: false,
+          code: check2.code || "BOT_CHALLENGE_FAILED",
+          error: check2.error || "Falha na verifica\xE7\xE3o humana anti-bot."
+        });
+      }
+    }
+    return next();
+  };
+}
+
+// src/server/middleware/auth.ts
 var ROLE_PERMISSIONS = {
   SUPER_ADMIN: ["*"],
   OWNER: [
@@ -83655,6 +84316,53 @@ function hasPermission(role, permission) {
   return perms.includes("*") || perms.includes(permission);
 }
 var revokedSessionTokens = /* @__PURE__ */ new Set();
+var DEFAULT_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1e3;
+function signSessionToken(payload) {
+  const enriched = {
+    ...payload,
+    iat: payload.iat || Date.now(),
+    exp: payload.exp || Date.now() + DEFAULT_SESSION_MAX_AGE_MS
+  };
+  const bodyB64 = Buffer.from(JSON.stringify(enriched), "utf8").toString("base64url");
+  const sig = crypto3.createHmac("sha256", getSecuritySecret()).update(bodyB64).digest("hex");
+  return `${bodyB64}.${sig}`;
+}
+function verifySessionToken(rawToken, options) {
+  const clean = String(rawToken || "").trim();
+  if (!clean) return { valid: false, reason: "EMPTY_TOKEN" };
+  if (clean.includes(".")) {
+    const parts = clean.split(".");
+    if (parts.length !== 2) {
+      return { valid: false, reason: "MALFORMED_SIGNED_TOKEN" };
+    }
+    const [bodyB64, providedSig] = parts;
+    const expectedSig = crypto3.createHmac("sha256", getSecuritySecret()).update(bodyB64).digest("hex");
+    const sigBuf = Buffer.from(providedSig, "utf8");
+    const expBuf = Buffer.from(expectedSig, "utf8");
+    if (sigBuf.length !== expBuf.length || !crypto3.timingSafeEqual(sigBuf, expBuf)) {
+      return { valid: false, reason: "INVALID_SIGNATURE" };
+    }
+    try {
+      const parsed = JSON.parse(Buffer.from(bodyB64, "base64url").toString("utf8"));
+      if (parsed?.exp && Date.now() > Number(parsed.exp)) {
+        return { valid: false, reason: "SESSION_EXPIRED" };
+      }
+      return { valid: true, data: parsed };
+    } catch {
+      return { valid: false, reason: "MALFORMED_PAYLOAD" };
+    }
+  }
+  const isTestMode = process.env.NODE_ENV === "test" || process.env.AGENDA_TEST_MODE === "1";
+  if (!isTestMode || options?.strictSignature) {
+    return { valid: false, reason: "SIGNATURE_REQUIRED" };
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(clean, "base64").toString("utf8"));
+    return { valid: true, data: parsed };
+  } catch {
+    return { valid: false, reason: "MALFORMED_LEGACY_TOKEN" };
+  }
+}
 function extractRawSessionToken(req) {
   const authHeader = req.headers.authorization;
   const bearerToken = authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
@@ -83680,7 +84388,16 @@ async function authMiddleware(req, res, next) {
     if (isSessionTokenRevoked(rawSession)) {
       return res.status(401).json({ success: false, error: "Sess\xE3o encerrada. Fa\xE7a login novamente." });
     }
-    const sessionData = JSON.parse(Buffer.from(rawSession, "base64").toString("utf8"));
+    const strictSignature = req.headers["x-enforce-token-signature"] === "true";
+    const verified = verifySessionToken(rawSession, { strictSignature });
+    if (!verified.valid || !verified.data) {
+      return res.status(401).json({
+        success: false,
+        code: verified.reason || "INVALID_SESSION",
+        error: "Sess\xE3o inv\xE1lida ou expirada. Fa\xE7a login novamente."
+      });
+    }
+    const sessionData = verified.data;
     if (sessionData && sessionData.userId) {
       const serverUser = memoryStore.users.find(
         (u) => u.id === sessionData.userId || sessionData.email && u.email === sessionData.email
@@ -85215,6 +85932,13 @@ var customerStorage = {
       if (clientEmail && a.client?.email && String(a.client.email).toLowerCase() === clientEmail) return true;
       return false;
     });
+    const tenantPayments = await db.listPayments(tenantId).catch(() => []);
+    const paymentByAppointmentId = /* @__PURE__ */ new Map();
+    for (const p of tenantPayments) {
+      if (p?.appointmentId && !paymentByAppointmentId.has(p.appointmentId)) {
+        paymentByAppointmentId.set(p.appointmentId, p);
+      }
+    }
     const now = /* @__PURE__ */ new Date();
     const formattedApps = clientApps.map((a) => {
       let effectiveStatus = a.status;
@@ -85239,9 +85963,16 @@ var customerStorage = {
       const refundRequest = cancellationRequest ? memoryStore.refundRequests.find(
         (rr) => rr.cancellationRequestId === cancellationRequest.id && rr.tenantId === tenantId
       ) || null : null;
+      const matchedPayment = paymentByAppointmentId.get(a.id);
+      const effectivePaymentStatus = matchedPayment?.status || a.paymentStatus || (effectiveStatus === "CONFIRMED" && depositCents > 0 ? "APPROVED" : void 0);
+      const isDepositPaid = Boolean(
+        a.depositPaid || effectivePaymentStatus === "APPROVED" || matchedPayment?.status === "APPROVED"
+      );
       return {
         ...a,
         status: effectiveStatus,
+        paymentStatus: effectivePaymentStatus,
+        depositPaid: isDepositPaid,
         tenantId,
         establishment: {
           id: tenantId,
@@ -85548,7 +86279,13 @@ var authLimiter = rate_limit_default({
   }
 });
 router.use(authLimiter);
-router.post("/register", async (req, res, next) => {
+router.get("/bot-challenge", (_req, res) => {
+  res.json({
+    success: true,
+    data: createBotChallenge()
+  });
+});
+router.post("/register", antiBotGuard({ mode: "register" }), async (req, res, next) => {
   try {
     saasService.ensureSaaSSeedData();
     const { name, email: email3, password, businessName, phone, plan, description, address, role, isMasterAdmin } = req.body || {};
@@ -85580,17 +86317,15 @@ router.post("/register", async (req, res, next) => {
       description,
       address
     });
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: result.user.id,
-        userName: result.user.name,
-        email: result.user.email,
-        tenantId: result.tenant.id,
-        role: "OWNER",
-        permissions: ROLE_PERMISSIONS.OWNER,
-        iat: Date.now()
-      })
-    ).toString("base64");
+    const sessionPayload = signSessionToken({
+      userId: result.user.id,
+      userName: result.user.name,
+      email: result.user.email,
+      tenantId: result.tenant.id,
+      role: "OWNER",
+      permissions: ROLE_PERMISSIONS.OWNER,
+      iat: Date.now()
+    });
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
       secure: true,
@@ -85621,16 +86356,34 @@ router.post("/register", async (req, res, next) => {
     next(error62);
   }
 });
-router.post("/login", async (req, res, next) => {
+router.post("/login", antiBotGuard({ mode: "login" }), async (req, res, next) => {
   try {
     saasService.ensureSaaSSeedData();
-    const { email: rawEmail, password, slug, tenantId: requestedTenantId } = req.body || {};
+    const { email: rawEmail, password, slug, tenantId: requestedTenantId, portalType } = req.body || {};
     const email3 = String(rawEmail || "").trim();
     if (!email3 || !password) {
       return res.status(400).json({ success: false, error: "E-mail e senha s\xE3o obrigat\xF3rios" });
     }
+    const lockout = checkLoginLockout(req, email3);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false,
+        code: "TOO_MANY_FAILED_ATTEMPTS",
+        retryAfterSeconds: lockout.retryAfterSec,
+        error: `Muitas tentativas de login inv\xE1lidas. Aguarde ${Math.ceil(lockout.retryAfterSec / 60)} minuto(s) para tentar novamente.`
+      });
+    }
     const user = await db.findUserByEmail(email3);
     if (!user || !user.passwordHash) {
+      const failState = recordFailedLoginAttempt(req, email3);
+      if (failState.lockedNow) {
+        return res.status(429).json({
+          success: false,
+          code: "TOO_MANY_FAILED_ATTEMPTS",
+          retryAfterSeconds: failState.retryAfterSec,
+          error: "Conta temporariamente protegida por excesso de tentativas inv\xE1lidas. Aguarde alguns minutos."
+        });
+      }
       return res.status(401).json({ success: false, error: "E-mail ou senha inv\xE1lidos" });
     }
     if (user.active === false) {
@@ -85648,6 +86401,15 @@ router.post("/login", async (req, res, next) => {
       isValid = true;
     }
     if (!isValid) {
+      const failState = recordFailedLoginAttempt(req, email3);
+      if (failState.lockedNow) {
+        return res.status(429).json({
+          success: false,
+          code: "TOO_MANY_FAILED_ATTEMPTS",
+          retryAfterSeconds: failState.retryAfterSec,
+          error: "Muitas tentativas inv\xE1lidas consecutivas. Acesso temporariamente bloqueado por seguran\xE7a."
+        });
+      }
       return res.status(401).json({ success: false, error: "E-mail ou senha inv\xE1lidos" });
     }
     const isKnownCustomer = user.role === "CUSTOMER" || String(user.id).startsWith("user-cust-") || !["OWNER", "MANAGER", "RECEPTIONIST", "PROFESSIONAL", "SUPER_ADMIN"].includes(String(user.role || "")) && (Boolean(slug) || memoryStore.clients.some(
@@ -85656,6 +86418,54 @@ router.post("/login", async (req, res, next) => {
     const role = isKnownCustomer ? "CUSTOMER" : user.role || "OWNER";
     user.role = role;
     const isMasterAdmin = Boolean(user.isMasterAdmin || role === "SUPER_ADMIN");
+    const normalizedPortal = portalType ? String(portalType).trim().toUpperCase() : "";
+    const clientIp = extractClientIp(req);
+    if (normalizedPortal === "SUPER_ADMIN" && !isMasterAdmin) {
+      await db.recordAuditLog(
+        null,
+        user.id,
+        "SECURITY_UNAUTHORIZED_PORTAL_LOGIN_ATTEMPT",
+        { portalType: "SUPER_ADMIN", attemptedEmail: email3, actualRole: role },
+        clientIp
+      ).catch(() => {
+      });
+      return res.status(403).json({
+        success: false,
+        code: "PORTAL_ACCESS_DENIED",
+        error: "Acesso negado: este painel de login \xE9 exclusivo para a administra\xE7\xE3o central (Super Admin)."
+      });
+    }
+    if (normalizedPortal === "STAFF" && role === "CUSTOMER") {
+      await db.recordAuditLog(
+        null,
+        user.id,
+        "SECURITY_UNAUTHORIZED_PORTAL_LOGIN_ATTEMPT",
+        { portalType: "STAFF", attemptedEmail: email3, actualRole: role },
+        clientIp
+      ).catch(() => {
+      });
+      return res.status(403).json({
+        success: false,
+        code: "PORTAL_ACCESS_DENIED",
+        error: "Acesso negado: contas de cliente n\xE3o podem acessar o painel administrativo do lojista."
+      });
+    }
+    if (normalizedPortal === "CUSTOMER" && role !== "CUSTOMER") {
+      await db.recordAuditLog(
+        null,
+        user.id,
+        "SECURITY_UNAUTHORIZED_PORTAL_LOGIN_ATTEMPT",
+        { portalType: "CUSTOMER", attemptedEmail: email3, actualRole: role },
+        clientIp
+      ).catch(() => {
+      });
+      return res.status(403).json({
+        success: false,
+        code: "PORTAL_ACCESS_DENIED",
+        error: "Acesso negado: esta \xE1rea \xE9 exclusiva para clientes. Utilize o acesso de lojista."
+      });
+    }
+    clearFailedLoginAttempts(req, email3);
     let tenantId = user.tenantId || "biz-1";
     if (role === "CUSTOMER") {
       const requestedStore = String(slug || requestedTenantId || "").trim();
@@ -85695,20 +86505,18 @@ router.post("/login", async (req, res, next) => {
         }
       }
     }
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: user.id,
-        userName: user.name,
-        email: user.email,
-        phone: user.phone || void 0,
-        tenantId,
-        role,
-        isMasterAdmin,
-        permissions: ROLE_PERMISSIONS[role] || [],
-        professionalId: user.professionalId || void 0,
-        iat: Date.now()
-      })
-    ).toString("base64");
+    const sessionPayload = signSessionToken({
+      userId: user.id,
+      userName: user.name,
+      email: user.email,
+      phone: user.phone || void 0,
+      tenantId,
+      role,
+      isMasterAdmin,
+      permissions: ROLE_PERMISSIONS[role] || [],
+      professionalId: user.professionalId || void 0,
+      iat: Date.now()
+    });
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
       secure: true,
@@ -85790,19 +86598,17 @@ router.post("/switch-tenant", authMiddleware, async (req, res, next) => {
       }
       resolvedRole = match.role;
     }
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: req.user.id,
-        userName: req.user.name,
-        email: req.user.email,
-        phone: req.user.phone,
-        tenantId: resolvedTenantId,
-        role: resolvedRole,
-        isMasterAdmin: Boolean(req.user.isMasterAdmin),
-        permissions: ROLE_PERMISSIONS[resolvedRole] || [],
-        iat: Date.now()
-      })
-    ).toString("base64");
+    const sessionPayload = signSessionToken({
+      userId: req.user.id,
+      userName: req.user.name,
+      email: req.user.email,
+      phone: req.user.phone,
+      tenantId: resolvedTenantId,
+      role: resolvedRole,
+      isMasterAdmin: Boolean(req.user.isMasterAdmin),
+      permissions: ROLE_PERMISSIONS[resolvedRole] || [],
+      iat: Date.now()
+    });
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
       secure: true,
@@ -85910,7 +86716,7 @@ router.get("/me", authMiddleware, async (req, res, next) => {
     next(error62);
   }
 });
-router.post("/forgot-password", async (req, res, next) => {
+router.post("/forgot-password", antiBotGuard({ mode: "forgot_password" }), async (req, res, next) => {
   try {
     const { email: email3 } = req.body;
     if (!email3) {
@@ -86068,7 +86874,15 @@ router3.post("/tenants/:slug/appointments", authMiddleware, async (req, res, nex
     }
     const { professionalId, serviceId, dateTime, date: date5, startTime, time: time3, notes } = body;
     const rawTime = startTime || time3;
-    const effectiveDateTime = dateTime || (date5 && rawTime ? `${date5}T${rawTime.length === 5 ? `${rawTime}:00` : rawTime}` : "");
+    let effectiveDateTime = String(dateTime || "").trim();
+    if (!effectiveDateTime && date5 && rawTime) {
+      const cleanTime = String(rawTime).trim();
+      const timeWithSeconds = cleanTime.length === 5 ? `${cleanTime}:00` : cleanTime;
+      const hasOffset = /[zZ]|[+-]\d{2}:?\d{2}$/.test(timeWithSeconds);
+      effectiveDateTime = `${date5}T${timeWithSeconds}${hasOffset ? "" : "-03:00"}`;
+    } else if (effectiveDateTime && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(effectiveDateTime)) {
+      effectiveDateTime = `${effectiveDateTime.length === 16 ? `${effectiveDateTime}:00` : effectiveDateTime}-03:00`;
+    }
     if (!professionalId || !serviceId || !effectiveDateTime) {
       return res.status(400).json({
         success: false,
@@ -86312,6 +87126,24 @@ router4.get("/tenants/:tenantId", async (req, res, next) => {
     res.json({
       success: true,
       data: details
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+router4.delete("/tenants/:tenantId", async (req, res, next) => {
+  try {
+    const { tenantId } = req.params;
+    const reason = req.body?.reason || req.query?.reason;
+    const result = await saasService.deleteTenant({
+      tenantId,
+      actorId: req.user?.id || "user-master-1",
+      reason: reason ? String(reason).trim() : void 0
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: `Estabelecimento "${result.deletedTenantName}" exclu\xEDdo permanentemente com sucesso.`
     });
   } catch (err) {
     next(err);
@@ -86567,6 +87399,7 @@ var masterAdmin_routes_default = router4;
 // src/server/routes/business.routes.ts
 var import_express5 = __toESM(require_express2(), 1);
 init_bcryptjs();
+init_mysql();
 init_storage();
 
 // src/server/validation/schemas.ts
@@ -86842,20 +87675,50 @@ router5.put("/cancellation-policy", requireRole(["OWNER", "MANAGER"]), async (re
 router5.get("/team-members", requireRole(["OWNER", "MANAGER"]), async (req, res, next) => {
   try {
     const tenantId = req.tenantContext?.tenantId || "biz-1";
-    const members2 = memoryStore.users.filter(
-      (u) => u.tenantId === tenantId && u.role !== "CUSTOMER" && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br"
-    ).map((u) => {
-      const prof = u.professionalId ? memoryStore.professionals.find((p) => p.id === u.professionalId) : null;
-      return {
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        role: u.role,
-        professionalId: u.professionalId || null,
-        professionalName: prof?.name || null,
-        active: u.active !== false
-      };
-    });
+    const pool2 = getMySqlPool();
+    let members2 = [];
+    if (pool2) {
+      try {
+        const [rows] = await pool2.query(
+          `SELECT u.id, u.name, u.email, tm.role, u.active, p.id as professionalId, p.name as professionalName
+           FROM TenantMember tm
+           JOIN User u ON u.id = tm.userId
+           LEFT JOIN Professional p ON p.email = u.email AND p.tenantId = tm.tenantId
+           WHERE tm.tenantId = ? AND tm.role != 'SUPER_ADMIN' AND u.email != 'master@agendabeauty.com.br'
+           ORDER BY u.name ASC`,
+          [tenantId]
+        );
+        if (rows && rows.length > 0) {
+          members2 = rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            email: r.email,
+            role: r.role,
+            professionalId: r.professionalId || null,
+            professionalName: r.professionalName || null,
+            active: Boolean(r.active)
+          }));
+        }
+      } catch (mysqlErr) {
+        console.warn("[MySQL Team Members GET Warning]:", mysqlErr);
+      }
+    }
+    if (members2.length === 0) {
+      members2 = memoryStore.users.filter(
+        (u) => u.tenantId === tenantId && u.role !== "CUSTOMER" && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br"
+      ).map((u) => {
+        const prof = u.professionalId ? memoryStore.professionals.find((p) => p.id === u.professionalId) : null;
+        return {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          professionalId: u.professionalId || null,
+          professionalName: prof?.name || null,
+          active: u.active !== false
+        };
+      });
+    }
     res.json({ success: true, data: members2 });
   } catch (error62) {
     next(error62);
@@ -86878,6 +87741,66 @@ router5.post("/team-members", requireRole(["OWNER", "MANAGER"]), async (req, res
       });
     }
     const normalizedEmail = String(email3).trim().toLowerCase();
+    const userId = `user-team-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const passwordHash = bcryptjs_default.hashSync(String(password), 10);
+    const pool2 = getMySqlPool();
+    if (pool2) {
+      try {
+        const [existingUsers] = await pool2.query(`SELECT id FROM User WHERE email = ?`, [normalizedEmail]);
+        let targetUserId = userId;
+        if (existingUsers && existingUsers.length > 0) {
+          targetUserId = existingUsers[0].id;
+        } else {
+          await pool2.query(
+            `INSERT INTO User (id, name, email, passwordHash, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, NOW(), NOW())`,
+            [userId, String(name).trim(), normalizedEmail, passwordHash]
+          );
+        }
+        const [existingMember] = await pool2.query(
+          `SELECT id FROM TenantMember WHERE tenantId = ? AND userId = ?`,
+          [tenantId, targetUserId]
+        );
+        if (existingMember && existingMember.length > 0) {
+          return res.status(409).json({ success: false, error: "Este usu\xE1rio j\xE1 faz parte da equipe deste estabelecimento." });
+        }
+        const memberId = `tm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        await pool2.query(
+          `INSERT INTO TenantMember (id, tenantId, userId, role, createdAt, updatedAt) VALUES (?, ?, ?, ?, NOW(), NOW())`,
+          [memberId, tenantId, targetUserId, role]
+        );
+        let linkedProfId2 = professionalId || void 0;
+        if (role === "PROFESSIONAL" && !linkedProfId2) {
+          const createdProf = await db.createProfessional(tenantId, {
+            name: String(name).trim(),
+            email: normalizedEmail,
+            phone: phone || "",
+            specialty: specialty || "Especialista Beauty",
+            active: true
+          });
+          linkedProfId2 = createdProf.id;
+        }
+        await db.recordAuditLog(tenantId, req.user?.id || null, "TEAM_MEMBER_CREATED", {
+          memberId: targetUserId,
+          email: normalizedEmail,
+          role,
+          professionalId: linkedProfId2
+        });
+        return res.status(201).json({
+          success: true,
+          data: {
+            id: targetUserId,
+            name: String(name).trim(),
+            email: normalizedEmail,
+            role,
+            professionalId: linkedProfId2 || null,
+            active: true
+          },
+          message: "Membro da equipe cadastrado com sucesso!"
+        });
+      } catch (mysqlErr) {
+        console.warn("[MySQL Team Member Create Warning]:", mysqlErr);
+      }
+    }
     const existing = memoryStore.users.find(
       (u) => String(u.email).toLowerCase() === normalizedEmail
     );
@@ -86899,10 +87822,10 @@ router5.post("/team-members", requireRole(["OWNER", "MANAGER"]), async (req, res
       linkedProfId = createdProf.id;
     }
     const newUser = {
-      id: `user-team-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: userId,
       name: String(name).trim(),
       email: normalizedEmail,
-      passwordHash: bcryptjs_default.hashSync(String(password), 10),
+      passwordHash,
       tenantId,
       role,
       professionalId: linkedProfId,
@@ -86937,19 +87860,44 @@ router5.delete("/team-members/:id", requireRole(["OWNER"]), async (req, res, nex
   try {
     const tenantId = req.tenantContext?.tenantId || "biz-1";
     const memberId = req.params.id;
-    const index = memoryStore.users.findIndex(
-      (u) => u.id === memberId && u.tenantId === tenantId && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br"
-    );
-    if (index === -1) {
-      return res.status(404).json({ success: false, error: "Usu\xE1rio n\xE3o encontrado." });
-    }
-    if (memoryStore.users[index].id === req.user?.id) {
+    if (memberId === req.user?.id) {
       return res.status(400).json({
         success: false,
         error: "Voc\xEA n\xE3o pode remover sua pr\xF3pria conta de propriet\xE1rio."
       });
     }
-    memoryStore.users.splice(index, 1);
+    const pool2 = getMySqlPool();
+    if (pool2) {
+      try {
+        const [members2] = await pool2.query(
+          `SELECT tm.*, u.email FROM TenantMember tm JOIN User u ON u.id = tm.userId WHERE tm.userId = ? AND tm.tenantId = ?`,
+          [memberId, tenantId]
+        );
+        if (!members2 || members2.length === 0) {
+          return res.status(404).json({ success: false, error: "Usu\xE1rio n\xE3o encontrado nesta empresa." });
+        }
+        const memberUser = members2[0];
+        if (memberUser.email?.toLowerCase() === "master@agendabeauty.com.br" || memberUser.role === "SUPER_ADMIN") {
+          return res.status(403).json({ success: false, error: "Acesso negado para remover super admin." });
+        }
+        await pool2.query(`DELETE FROM TenantMember WHERE userId = ? AND tenantId = ?`, [memberId, tenantId]);
+      } catch (mysqlErr) {
+        console.warn("[MySQL Team Member Delete Warning]:", mysqlErr);
+      }
+    }
+    const index = memoryStore.users.findIndex(
+      (u) => u.id === memberId && u.tenantId === tenantId && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br"
+    );
+    if (index !== -1) {
+      if (memoryStore.users[index].id === req.user?.id) {
+        return res.status(400).json({
+          success: false,
+          error: "Voc\xEA n\xE3o pode remover sua pr\xF3pria conta de propriet\xE1rio."
+        });
+      }
+      memoryStore.users.splice(index, 1);
+    }
+    await db.recordAuditLog(tenantId, req.user?.id || null, "TEAM_MEMBER_DELETED", { memberId });
     res.json({ success: true, message: "Acesso do membro removido com sucesso." });
   } catch (error62) {
     next(error62);
@@ -87267,10 +88215,10 @@ init_storage();
 
 // src/server/whatsapp/whatsappService.ts
 init_storage();
-import crypto4 from "crypto";
+import crypto6 from "crypto";
 
 // src/server/whatsapp/WhatsAppProvider.ts
-import crypto3 from "crypto";
+import crypto5 from "crypto";
 var PERMANENT_META_ERROR_CODES = /* @__PURE__ */ new Set([
   100,
   // Invalid parameter
@@ -87633,14 +88581,14 @@ var MetaWhatsAppCloudProvider = class {
       return false;
     }
     const receivedHex = parts[1];
-    const expectedHex = crypto3.createHmac("sha256", appSecret).update(rawBody).digest("hex");
+    const expectedHex = crypto5.createHmac("sha256", appSecret).update(rawBody).digest("hex");
     try {
       const a = Buffer.from(receivedHex, "hex");
       const b = Buffer.from(expectedHex, "hex");
       if (a.length !== b.length || a.length === 0) {
         return false;
       }
-      return crypto3.timingSafeEqual(a, b);
+      return crypto5.timingSafeEqual(a, b);
     } catch {
       return false;
     }
@@ -87717,12 +88665,12 @@ var defaultWhatsAppProvider = new MetaWhatsAppCloudProvider();
 var activeProvider = defaultWhatsAppProvider;
 var ENCRYPTION_SECRET = process.env.WHATSAPP_CONFIG_ENCRYPTION_KEY || "agenda-beauty-etapa10-default-encryption-key-32b";
 function deriveKey() {
-  return crypto4.createHash("sha256").update(ENCRYPTION_SECRET).digest();
+  return crypto6.createHash("sha256").update(ENCRYPTION_SECRET).digest();
 }
 function encryptSecret(plainText) {
   if (!plainText || !plainText.trim()) return null;
-  const iv = crypto4.randomBytes(12);
-  const cipher = crypto4.createCipheriv("aes-256-gcm", deriveKey(), iv);
+  const iv = crypto6.randomBytes(12);
+  const cipher = crypto6.createCipheriv("aes-256-gcm", deriveKey(), iv);
   const encrypted = Buffer.concat([cipher.update(plainText.trim(), "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted.toString("hex")}`;
@@ -87735,7 +88683,7 @@ function decryptSecret(cipherText) {
     const iv = Buffer.from(parts[0], "hex");
     const authTag = Buffer.from(parts[1], "hex");
     const encrypted = Buffer.from(parts[2], "hex");
-    const decipher = crypto4.createDecipheriv("aes-256-gcm", deriveKey(), iv);
+    const decipher = crypto6.createDecipheriv("aes-256-gcm", deriveKey(), iv);
     decipher.setAuthTag(authTag);
     const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
     return decrypted.toString("utf8");
@@ -89071,7 +90019,7 @@ async function sendManualOperationalMessage(input2) {
     };
   }
   const tenant = memoryStore.tenants.find((t) => t.id === input2.tenantId);
-  const contentHash = crypto4.createHash("md5").update(note).digest("hex").slice(0, 10);
+  const contentHash = crypto6.createHash("md5").update(note).digest("hex").slice(0, 10);
   if (input2.useFreeText) {
     const norm = normalizeWhatsAppPhone(client.normalizedPhone || client.phone);
     if (!norm.valid || !norm.normalizedPhone) {
@@ -89366,7 +90314,7 @@ function listTenantReminders(tenantId, appointmentId) {
 
 // src/server/advancedService.ts
 init_storage();
-import crypto5 from "crypto";
+import crypto7 from "crypto";
 var activeLocks = /* @__PURE__ */ new Set();
 async function withAtomicLock(lockKey, fn) {
   while (activeLocks.has(lockKey)) {
@@ -90425,9 +91373,9 @@ async function consumeCustomerPackageCredit(tenantId, input2) {
   });
 }
 function generateSecureGiftCardCode() {
-  const p1 = crypto5.randomBytes(3).toString("hex").toUpperCase();
-  const p2 = crypto5.randomBytes(3).toString("hex").toUpperCase();
-  const p3 = crypto5.randomBytes(3).toString("hex").toUpperCase();
+  const p1 = crypto7.randomBytes(3).toString("hex").toUpperCase();
+  const p2 = crypto7.randomBytes(3).toString("hex").toUpperCase();
+  const p3 = crypto7.randomBytes(3).toString("hex").toUpperCase();
   return `GC-${p1}-${p2}-${p3}`;
 }
 function createGiftCard(tenantId, input2, actorId) {
@@ -91721,23 +92669,22 @@ async function resolveTenantForAppointment(req, res, next) {
   }
   const rawToken = extractRawSessionToken(req);
   if (!req.tenantContext && rawToken && !isSessionTokenRevoked(rawToken)) {
-    try {
-      const sessionData = JSON.parse(Buffer.from(rawToken, "base64").toString("utf8"));
-      if (sessionData && sessionData.userId) {
-        req.user = {
-          id: sessionData.userId,
-          name: sessionData.userName || "Usu\xE1rio",
-          email: sessionData.email || "",
-          active: true,
-          isMasterAdmin: Boolean(sessionData.isMasterAdmin)
-        };
-        req.tenantContext = {
-          tenantId: sessionData.tenantId || "biz-1",
-          role: sessionData.role || "OWNER",
-          permissions: sessionData.permissions || ["*"]
-        };
-      }
-    } catch (e) {
+    const strictSignature = req.headers["x-enforce-token-signature"] === "true";
+    const verified = verifySessionToken(rawToken, { strictSignature });
+    const sessionData = verified.valid ? verified.data : null;
+    if (sessionData && sessionData.userId) {
+      req.user = {
+        id: sessionData.userId,
+        name: sessionData.userName || "Usu\xE1rio",
+        email: sessionData.email || "",
+        active: true,
+        isMasterAdmin: Boolean(sessionData.isMasterAdmin)
+      };
+      req.tenantContext = {
+        tenantId: sessionData.tenantId || "biz-1",
+        role: sessionData.role || "OWNER",
+        permissions: sessionData.permissions || ["*"]
+      };
     }
   }
   let appointment = null;
@@ -92076,7 +93023,7 @@ async function resolveCustomerContext(req, res, next) {
     next(err);
   }
 }
-router13.post("/auth/register", async (req, res, next) => {
+router13.post("/auth/register", antiBotGuard({ mode: "register" }), async (req, res, next) => {
   try {
     await saasService.syncTenantsFromMySql();
     if (req.body?.role === "SUPER_ADMIN" || req.body?.isMasterAdmin === true) {
@@ -92120,17 +93067,15 @@ router13.post("/auth/register", async (req, res, next) => {
             name || existing.name,
             phone || existing.phone
           );
-          const sessionPayload2 = Buffer.from(
-            JSON.stringify({
-              userId: existing.id,
-              userName: existing.name,
-              email: existing.email,
-              phone: client.phone || existing.phone,
-              tenantId: resolvedTenantId,
-              role: "CUSTOMER",
-              permissions: ["customer:*"]
-            })
-          ).toString("base64");
+          const sessionPayload2 = signSessionToken({
+            userId: existing.id,
+            userName: existing.name,
+            email: existing.email,
+            phone: client.phone || existing.phone,
+            tenantId: resolvedTenantId,
+            role: "CUSTOMER",
+            permissions: ["customer:*"]
+          });
           res.cookie("agenda_session", sessionPayload2, {
             httpOnly: true,
             secure: true,
@@ -92170,17 +93115,15 @@ router13.post("/auth/register", async (req, res, next) => {
       tenantId: resolvedTenantId,
       contactPreference: contactPreference || "WHATSAPP"
     });
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: result.user.id,
-        userName: result.user.name,
-        email: result.user.email,
-        phone: result.client.phone,
-        tenantId: result.client.tenantId,
-        role: "CUSTOMER",
-        permissions: ["customer:*"]
-      })
-    ).toString("base64");
+    const sessionPayload = signSessionToken({
+      userId: result.user.id,
+      userName: result.user.name,
+      email: result.user.email,
+      phone: result.client.phone,
+      tenantId: result.client.tenantId,
+      role: "CUSTOMER",
+      permissions: ["customer:*"]
+    });
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
       secure: true,
@@ -92209,15 +93152,34 @@ router13.post("/auth/register", async (req, res, next) => {
     next(err);
   }
 });
-router13.post("/auth/login", async (req, res, next) => {
+router13.post("/auth/login", antiBotGuard({ mode: "login" }), async (req, res, next) => {
   try {
     await saasService.syncTenantsFromMySql();
-    const { email: email3, password, slug, tenantId } = req.body || {};
+    const { email: rawEmail, password, slug, tenantId } = req.body || {};
+    const email3 = String(rawEmail || "").trim();
     if (!email3 || !password) {
       return res.status(400).json({ success: false, error: "E-mail e senha s\xE3o obrigat\xF3rios" });
     }
+    const lockout = checkLoginLockout(req, email3);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false,
+        code: "TOO_MANY_FAILED_ATTEMPTS",
+        retryAfterSeconds: lockout.retryAfterSec,
+        error: `Muitas tentativas de login inv\xE1lidas. Aguarde ${Math.ceil(lockout.retryAfterSec / 60)} minuto(s) e tente novamente.`
+      });
+    }
     const user = await db.findUserByEmail(email3);
     if (!user || !user.passwordHash) {
+      const failState = recordFailedLoginAttempt(req, email3);
+      if (failState.lockedNow) {
+        return res.status(429).json({
+          success: false,
+          code: "TOO_MANY_FAILED_ATTEMPTS",
+          retryAfterSeconds: failState.retryAfterSec,
+          error: "Muitas tentativas inv\xE1lidas. Acesso temporariamente bloqueado por seguran\xE7a."
+        });
+      }
       return res.status(401).json({ success: false, error: "E-mail ou senha inv\xE1lidos" });
     }
     if (user.active === false) {
@@ -92229,8 +93191,33 @@ router13.post("/auth/login", async (req, res, next) => {
     }
     const isValid = await bcryptjs_default.compare(password, user.passwordHash);
     if (!isValid) {
+      const failState = recordFailedLoginAttempt(req, email3);
+      if (failState.lockedNow) {
+        return res.status(429).json({
+          success: false,
+          code: "TOO_MANY_FAILED_ATTEMPTS",
+          retryAfterSeconds: failState.retryAfterSec,
+          error: "Muitas tentativas inv\xE1lidas consecutivas. Aguarde alguns minutos."
+        });
+      }
       return res.status(401).json({ success: false, error: "E-mail ou senha inv\xE1lidos" });
     }
+    if (user.isMasterAdmin || ["SUPER_ADMIN", "OWNER", "MANAGER", "RECEPTIONIST", "PROFESSIONAL"].includes(String(user.role || ""))) {
+      await db.recordAuditLog(
+        null,
+        user.id,
+        "SECURITY_UNAUTHORIZED_PORTAL_LOGIN_ATTEMPT",
+        { portalType: "CUSTOMER_ENDPOINT", attemptedEmail: email3, actualRole: user.role },
+        extractClientIp(req)
+      ).catch(() => {
+      });
+      return res.status(403).json({
+        success: false,
+        code: "PORTAL_ACCESS_DENIED",
+        error: "Esta \xE1rea de login \xE9 exclusiva para clientes. Utilize o acesso apropriado para lojistas ou administradores."
+      });
+    }
+    clearFailedLoginAttempts(req, email3);
     const requestedStoreRef = String(slug || tenantId || "").trim();
     let targetTenantId = user.tenantId || "biz-1";
     let client = null;
@@ -92265,18 +93252,16 @@ router13.post("/auth/login", async (req, res, next) => {
         user.phone
       );
     }
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: user.id,
-        userName: user.name,
-        email: user.email,
-        phone: client?.phone || user.phone,
-        tenantId: targetTenantId,
-        role: user.role || "CUSTOMER",
-        permissions: ["customer:*"],
-        iat: Date.now()
-      })
-    ).toString("base64");
+    const sessionPayload = signSessionToken({
+      userId: user.id,
+      userName: user.name,
+      email: user.email,
+      phone: client?.phone || user.phone,
+      tenantId: targetTenantId,
+      role: "CUSTOMER",
+      permissions: ["customer:*"],
+      iat: Date.now()
+    });
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
       secure: true,
@@ -92484,18 +93469,16 @@ router13.post("/switch-store", async (req, res, next) => {
         error: "Acesso negado: voc\xEA n\xE3o possui v\xEDnculo cadastrado com este estabelecimento."
       });
     }
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: req.user.id,
-        userName: req.user.name,
-        email: req.user.email,
-        phone: linkedClient.phone || req.user.phone,
-        tenantId: targetTenant.id,
-        role: "CUSTOMER",
-        permissions: ["customer:*"],
-        iat: Date.now()
-      })
-    ).toString("base64");
+    const sessionPayload = signSessionToken({
+      userId: req.user.id,
+      userName: req.user.name,
+      email: req.user.email,
+      phone: linkedClient.phone || req.user.phone,
+      tenantId: targetTenant.id,
+      role: "CUSTOMER",
+      permissions: ["customer:*"],
+      iat: Date.now()
+    });
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
       secure: true,
@@ -92825,6 +93808,35 @@ router13.post("/appointments/:appointmentId/cancellation-requests", async (req, 
       success: true,
       data: requestRecord,
       message: `Solicita\xE7\xE3o de cancelamento ${requestRecord.referenceCode} registrada com sucesso.`
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+router13.post("/appointments/:appointmentId/cancel-pending", async (req, res, next) => {
+  try {
+    const appointmentId = req.params.appointmentId;
+    const ownership = await customerStorage.resolveCustomerAppointmentOwnership(
+      req.user.id,
+      req.user.email,
+      appointmentId
+    );
+    const tenantId = ownership ? ownership.tenantId : req.activeTenantId || req.tenantContext?.tenantId || "biz-1";
+    const existing = await db.getAppointmentById(tenantId, appointmentId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: "Agendamento n\xE3o encontrado." });
+    }
+    if (existing.status !== "PENDING_PAYMENT" && existing.status !== "PENDING") {
+      return res.status(400).json({
+        success: false,
+        error: "Apenas pr\xE9-agendamentos pendentes de confirma\xE7\xE3o podem ser cancelados diretamente por este fluxo."
+      });
+    }
+    const updated = await db.updateAppointmentStatus(tenantId, appointmentId, "CANCELLED", req.user.id);
+    res.json({
+      success: true,
+      data: updated,
+      message: "Pr\xE9-agendamento cancelado com sucesso. O hor\xE1rio foi liberado imediatamente na agenda do estabelecimento."
     });
   } catch (err) {
     next(err);

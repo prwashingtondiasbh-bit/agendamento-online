@@ -8,9 +8,18 @@ import {
   authMiddleware,
   extractRawSessionToken,
   revokeSessionToken,
+  signSessionToken,
   ROLE_PERMISSIONS,
   UserRole,
 } from '../middleware/auth.js';
+import {
+  antiBotGuard,
+  createBotChallenge,
+  checkLoginLockout,
+  recordFailedLoginAttempt,
+  clearFailedLoginAttempts,
+  extractClientIp,
+} from '../middleware/antiBot.js';
 
 const router = Router();
 
@@ -31,8 +40,16 @@ const authLimiter = rateLimit({
 
 router.use(authLimiter);
 
+// Issue signed human-verification challenge for login/registration forms
+router.get('/bot-challenge', (_req, res) => {
+  res.json({
+    success: true,
+    data: createBotChallenge(),
+  });
+});
+
 // Register Owner & Tenant
-router.post('/register', async (req, res, next) => {
+router.post('/register', antiBotGuard({ mode: 'register' }), async (req, res, next) => {
   try {
     saasService.ensureSaaSSeedData();
     const { name, email, password, businessName, phone, plan, description, address, role, isMasterAdmin } = req.body || {};
@@ -72,18 +89,16 @@ router.post('/register', async (req, res, next) => {
       address,
     });
 
-    // Set session cookie
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: result.user.id,
-        userName: result.user.name,
-        email: result.user.email,
-        tenantId: result.tenant.id,
-        role: 'OWNER',
-        permissions: ROLE_PERMISSIONS.OWNER,
-        iat: Date.now(),
-      })
-    ).toString('base64');
+    // Set signed session cookie
+    const sessionPayload = signSessionToken({
+      userId: result.user.id,
+      userName: result.user.name,
+      email: result.user.email,
+      tenantId: result.tenant.id,
+      role: 'OWNER',
+      permissions: ROLE_PERMISSIONS.OWNER,
+      iat: Date.now(),
+    });
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
@@ -118,18 +133,37 @@ router.post('/register', async (req, res, next) => {
 });
 
 // Login
-router.post('/login', async (req, res, next) => {
+router.post('/login', antiBotGuard({ mode: 'login' }), async (req, res, next) => {
   try {
     saasService.ensureSaaSSeedData();
-    const { email: rawEmail, password, slug, tenantId: requestedTenantId } = req.body || {};
+    const { email: rawEmail, password, slug, tenantId: requestedTenantId, portalType } = req.body || {};
     const email = String(rawEmail || '').trim();
 
     if (!email || !password) {
       return res.status(400).json({ success: false, error: 'E-mail e senha são obrigatórios' });
     }
 
+    const lockout = checkLoginLockout(req, email);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false,
+        code: 'TOO_MANY_FAILED_ATTEMPTS',
+        retryAfterSeconds: lockout.retryAfterSec,
+        error: `Muitas tentativas de login inválidas. Aguarde ${Math.ceil(lockout.retryAfterSec / 60)} minuto(s) para tentar novamente.`,
+      });
+    }
+
     const user = await db.findUserByEmail(email);
     if (!user || !user.passwordHash) {
+      const failState = recordFailedLoginAttempt(req, email);
+      if (failState.lockedNow) {
+        return res.status(429).json({
+          success: false,
+          code: 'TOO_MANY_FAILED_ATTEMPTS',
+          retryAfterSeconds: failState.retryAfterSec,
+          error: 'Conta temporariamente protegida por excesso de tentativas inválidas. Aguarde alguns minutos.',
+        });
+      }
       return res.status(401).json({ success: false, error: 'E-mail ou senha inválidos' });
     }
 
@@ -151,6 +185,15 @@ router.post('/login', async (req, res, next) => {
     }
 
     if (!isValid) {
+      const failState = recordFailedLoginAttempt(req, email);
+      if (failState.lockedNow) {
+        return res.status(429).json({
+          success: false,
+          code: 'TOO_MANY_FAILED_ATTEMPTS',
+          retryAfterSeconds: failState.retryAfterSec,
+          error: 'Muitas tentativas inválidas consecutivas. Acesso temporariamente bloqueado por segurança.',
+        });
+      }
       return res.status(401).json({ success: false, error: 'E-mail ou senha inválidos' });
     }
 
@@ -168,6 +211,55 @@ router.post('/login', async (req, res, next) => {
     const role: UserRole = isKnownCustomer ? 'CUSTOMER' : ((user.role as UserRole) || 'OWNER');
     user.role = role;
     const isMasterAdmin = Boolean((user as any).isMasterAdmin || role === 'SUPER_ADMIN');
+
+    // Enforce strict server-side panel role isolation BEFORE issuing cookies/tokens
+    const normalizedPortal = portalType ? String(portalType).trim().toUpperCase() : '';
+    const clientIp = extractClientIp(req);
+    if (normalizedPortal === 'SUPER_ADMIN' && !isMasterAdmin) {
+      await db.recordAuditLog(
+        null,
+        user.id,
+        'SECURITY_UNAUTHORIZED_PORTAL_LOGIN_ATTEMPT',
+        { portalType: 'SUPER_ADMIN', attemptedEmail: email, actualRole: role },
+        clientIp
+      ).catch(() => {});
+      return res.status(403).json({
+        success: false,
+        code: 'PORTAL_ACCESS_DENIED',
+        error: 'Acesso negado: este painel de login é exclusivo para a administração central (Super Admin).',
+      });
+    }
+    if (normalizedPortal === 'STAFF' && role === 'CUSTOMER') {
+      await db.recordAuditLog(
+        null,
+        user.id,
+        'SECURITY_UNAUTHORIZED_PORTAL_LOGIN_ATTEMPT',
+        { portalType: 'STAFF', attemptedEmail: email, actualRole: role },
+        clientIp
+      ).catch(() => {});
+      return res.status(403).json({
+        success: false,
+        code: 'PORTAL_ACCESS_DENIED',
+        error: 'Acesso negado: contas de cliente não podem acessar o painel administrativo do lojista.',
+      });
+    }
+    if (normalizedPortal === 'CUSTOMER' && role !== 'CUSTOMER') {
+      await db.recordAuditLog(
+        null,
+        user.id,
+        'SECURITY_UNAUTHORIZED_PORTAL_LOGIN_ATTEMPT',
+        { portalType: 'CUSTOMER', attemptedEmail: email, actualRole: role },
+        clientIp
+      ).catch(() => {});
+      return res.status(403).json({
+        success: false,
+        code: 'PORTAL_ACCESS_DENIED',
+        error: 'Acesso negado: esta área é exclusiva para clientes. Utilize o acesso de lojista.',
+      });
+    }
+
+    clearFailedLoginAttempts(req, email);
+
     let tenantId = user.tenantId || 'biz-1';
 
     if (role === 'CUSTOMER') {
@@ -211,20 +303,18 @@ router.post('/login', async (req, res, next) => {
       }
     }
 
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: user.id,
-        userName: user.name,
-        email: user.email,
-        phone: (user as any).phone || undefined,
-        tenantId,
-        role,
-        isMasterAdmin,
-        permissions: ROLE_PERMISSIONS[role] || [],
-        professionalId: (user as any).professionalId || undefined,
-        iat: Date.now(),
-      })
-    ).toString('base64');
+    const sessionPayload = signSessionToken({
+      userId: user.id,
+      userName: user.name,
+      email: user.email,
+      phone: (user as any).phone || undefined,
+      tenantId,
+      role,
+      isMasterAdmin,
+      permissions: ROLE_PERMISSIONS[role] || [],
+      professionalId: (user as any).professionalId || undefined,
+      iat: Date.now(),
+    });
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
@@ -319,19 +409,17 @@ router.post('/switch-tenant', authMiddleware, async (req, res, next) => {
       resolvedRole = match.role as UserRole;
     }
 
-    const sessionPayload = Buffer.from(
-      JSON.stringify({
-        userId: req.user.id,
-        userName: req.user.name,
-        email: req.user.email,
-        phone: req.user.phone,
-        tenantId: resolvedTenantId,
-        role: resolvedRole,
-        isMasterAdmin: Boolean(req.user.isMasterAdmin),
-        permissions: ROLE_PERMISSIONS[resolvedRole] || [],
-        iat: Date.now(),
-      })
-    ).toString('base64');
+    const sessionPayload = signSessionToken({
+      userId: req.user.id,
+      userName: req.user.name,
+      email: req.user.email,
+      phone: req.user.phone,
+      tenantId: resolvedTenantId,
+      role: resolvedRole,
+      isMasterAdmin: Boolean(req.user.isMasterAdmin),
+      permissions: ROLE_PERMISSIONS[resolvedRole] || [],
+      iat: Date.now(),
+    });
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
@@ -463,7 +551,7 @@ router.get('/me', authMiddleware, async (req, res, next) => {
 });
 
 // Forgot Password
-router.post('/forgot-password', async (req, res, next) => {
+router.post('/forgot-password', antiBotGuard({ mode: 'forgot_password' }), async (req, res, next) => {
   try {
     const { email } = req.body;
     if (!email) {

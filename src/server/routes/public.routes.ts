@@ -151,8 +151,18 @@ router.post('/tenants/:slug/appointments', authMiddleware, async (req: any, res,
 
     const { professionalId, serviceId, dateTime, date, startTime, time, notes } = body;
     const rawTime = startTime || time;
-    const effectiveDateTime =
-      dateTime || (date && rawTime ? `${date}T${rawTime.length === 5 ? `${rawTime}:00` : rawTime}` : '');
+    let effectiveDateTime = String(dateTime || '').trim();
+    if (!effectiveDateTime && date && rawTime) {
+      const cleanTime = String(rawTime).trim();
+      const timeWithSeconds = cleanTime.length === 5 ? `${cleanTime}:00` : cleanTime;
+      const hasOffset = /[zZ]|[+-]\d{2}:?\d{2}$/.test(timeWithSeconds);
+      effectiveDateTime = `${date}T${timeWithSeconds}${hasOffset ? '' : '-03:00'}`;
+    } else if (
+      effectiveDateTime &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(effectiveDateTime)
+    ) {
+      effectiveDateTime = `${effectiveDateTime.length === 16 ? `${effectiveDateTime}:00` : effectiveDateTime}-03:00`;
+    }
 
     if (!professionalId || !serviceId || !effectiveDateTime) {
       return res.status(400).json({

@@ -7,6 +7,7 @@ import {
   authMiddleware,
   extractRawSessionToken,
   isSessionTokenRevoked,
+  verifySessionToken,
   requireRole,
 } from '../middleware/auth.js';
 
@@ -23,23 +24,23 @@ async function resolveTenantForAppointment(req: Request, res: Response, next: Ne
   // Extract session context if cookie/token is present
   const rawToken = extractRawSessionToken(req);
   if (!req.tenantContext && rawToken && !isSessionTokenRevoked(rawToken)) {
-    try {
-      const sessionData = JSON.parse(Buffer.from(rawToken, 'base64').toString('utf8'));
-      if (sessionData && sessionData.userId) {
-        req.user = {
-          id: sessionData.userId,
-          name: sessionData.userName || 'Usuário',
-          email: sessionData.email || '',
-          active: true,
-          isMasterAdmin: Boolean(sessionData.isMasterAdmin),
-        };
-        req.tenantContext = {
-          tenantId: sessionData.tenantId || 'biz-1',
-          role: sessionData.role || 'OWNER',
-          permissions: sessionData.permissions || ['*'],
-        };
-      }
-    } catch (e) {}
+    const strictSignature = req.headers['x-enforce-token-signature'] === 'true';
+    const verified = verifySessionToken(rawToken, { strictSignature });
+    const sessionData = verified.valid ? verified.data : null;
+    if (sessionData && sessionData.userId) {
+      req.user = {
+        id: sessionData.userId,
+        name: sessionData.userName || 'Usuário',
+        email: sessionData.email || '',
+        active: true,
+        isMasterAdmin: Boolean(sessionData.isMasterAdmin),
+      };
+      req.tenantContext = {
+        tenantId: sessionData.tenantId || 'biz-1',
+        role: sessionData.role || 'OWNER',
+        permissions: sessionData.permissions || ['*'],
+      };
+    }
   }
 
   // Look for appointment across all known tenants or memoryStore

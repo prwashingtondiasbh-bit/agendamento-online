@@ -16,6 +16,7 @@ const testFiles = [
   'src/server/tests/etapa12c2SecurityReconcileDeposit.test.ts',
   'src/server/tests/etapa13SaasMultiTenant.test.ts',
   'src/server/tests/etapa14CustomerSlugMultiStore.test.ts',
+  'src/server/tests/fullStoreLifecycleAndSecurity.test.ts',
 ];
 
 console.log('==========================================================');

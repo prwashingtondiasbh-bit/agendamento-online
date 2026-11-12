@@ -1,5 +1,12 @@
 import bcrypt from 'bcryptjs';
-import { getMySqlPool, queryWithRetry, handleDbFallbackError, getLastCacheInvalidationTime } from './db/mysql.js';
+import {
+  getMySqlPool,
+  getConnectionWithRetry,
+  queryWithRetry,
+  invalidateQueryCache,
+  handleDbFallbackError,
+  getLastCacheInvalidationTime,
+} from './db/mysql.js';
 import {
   db,
   memoryStore,
@@ -2016,5 +2023,299 @@ export const saasService = {
         }
         return true;
       });
+  },
+
+  async deleteTenant(params: { tenantId: string; actorId: string; reason?: string }) {
+    this.ensureSaaSSeedData();
+    lastFullSyncTimestamp = 0;
+    await this.syncTenantsFromMySql();
+
+    const store = memoryStore as any;
+    const tenantId = String(params.tenantId || '').trim();
+    if (!tenantId) {
+      const err: any = new Error('ID do estabelecimento inválido.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let tenant = store.tenants.find((t: any) => t.id === tenantId);
+    const pool = getMySqlPool();
+
+    if (!tenant && pool) {
+      try {
+        const [rows]: any = await queryWithRetry(`SELECT * FROM Tenant WHERE id = ? LIMIT 1`, [tenantId]);
+        if (Array.isArray(rows) && rows.length > 0) {
+          tenant = rows[0];
+        }
+      } catch (e) {
+        handleDbFallbackError('deleteTenantLookup', e);
+      }
+    }
+
+    if (!tenant) {
+      const err: any = new Error('Estabelecimento não encontrado.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const tenantName = String(tenant.name || tenantId);
+    const tenantSlug = String(tenant.slug || '');
+    const reason = String(params.reason || '').trim() || 'Exclusão permanente solicitada pelo Super Admin';
+
+    const candidateUserIds = new Set<string>();
+    const deletedProfIds = new Set<string>();
+
+    for (const tm of store.tenantMembers || []) {
+      if (tm.tenantId === tenantId && tm.userId) {
+        candidateUserIds.add(tm.userId);
+      }
+    }
+    for (const u of store.users || []) {
+      if (
+        u.tenantId === tenantId &&
+        !u.isMasterAdmin &&
+        u.role !== 'SUPER_ADMIN' &&
+        u.role !== 'CUSTOMER' &&
+        String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br'
+      ) {
+        candidateUserIds.add(u.id);
+      }
+    }
+    for (const p of store.professionals || []) {
+      if (p.tenantId === tenantId && p.id) {
+        deletedProfIds.add(p.id);
+      }
+    }
+
+    const removedOrphanedUsers: string[] = [];
+
+    if (pool) {
+      let conn: any = null;
+      try {
+        conn = await getConnectionWithRetry();
+        await conn.beginTransaction();
+
+        const [tmRows]: any = await conn.query(
+          `SELECT userId FROM TenantMember WHERE tenantId = ?`,
+          [tenantId]
+        );
+        if (Array.isArray(tmRows)) {
+          for (const row of tmRows) {
+            if (row?.userId) candidateUserIds.add(row.userId);
+          }
+        }
+
+        const [profRows]: any = await conn.query(
+          `SELECT id FROM Professional WHERE tenantId = ?`,
+          [tenantId]
+        );
+        if (Array.isArray(profRows)) {
+          for (const row of profRows) {
+            if (row?.id) deletedProfIds.add(row.id);
+          }
+        }
+
+        // Delete tenant row; foreign keys cascade all tenant-scoped tables and SET NULL on AuditLog/WebhookEvent
+        const [delRes]: any = await conn.execute(`DELETE FROM Tenant WHERE id = ?`, [tenantId]);
+        if (!delRes || Number(delRes.affectedRows || 0) === 0) {
+          // Ensure consistency if tenant only existed in memory or was already absent in MySQL
+        }
+
+        // Remove staff-only users that no longer belong to any other store or client profile
+        for (const uid of candidateUserIds) {
+          if (!uid || uid === params.actorId || uid === 'user-master-1') continue;
+
+          const [uRows]: any = await conn.query(
+            `SELECT id, email FROM User WHERE id = ? LIMIT 1`,
+            [uid]
+          );
+          const dbUser = Array.isArray(uRows) && uRows.length > 0 ? uRows[0] : null;
+          const memUser = (store.users || []).find((u: any) => u.id === uid);
+          const emailLower = String(dbUser?.email || memUser?.email || '').toLowerCase();
+
+          if (
+            !dbUser ||
+            emailLower === 'master@agendabeauty.com.br' ||
+            memUser?.isMasterAdmin ||
+            memUser?.role === 'SUPER_ADMIN' ||
+            memUser?.role === 'CUSTOMER' ||
+            String(uid).startsWith('user-cust-')
+          ) {
+            continue;
+          }
+
+          const [remTmRows]: any = await conn.query(
+            `SELECT COUNT(*) as cnt FROM TenantMember WHERE userId = ?`,
+            [uid]
+          );
+          const remTm = Number(remTmRows?.[0]?.cnt || 0);
+          if (remTm > 0) continue;
+
+          const [remCliRows]: any = await conn.query(
+            `SELECT COUNT(*) as cnt FROM Client WHERE (email IS NOT NULL AND LOWER(email) = LOWER(?)) OR notes LIKE ?`,
+            [emailLower, `%userId:${uid}%`]
+          );
+          const remCli = Number(remCliRows?.[0]?.cnt || 0);
+          if (remCli > 0) continue;
+
+          await conn.execute(
+            `DELETE FROM User WHERE id = ? AND LOWER(email) <> 'master@agendabeauty.com.br'`,
+            [uid]
+          );
+          removedOrphanedUsers.push(uid);
+        }
+
+        await conn.commit();
+        invalidateQueryCache();
+      } catch (e) {
+        if (conn) {
+          try {
+            await conn.rollback();
+          } catch {}
+        }
+        handleDbFallbackError('deleteTenant', e);
+      } finally {
+        if (conn) {
+          try {
+            conn.release();
+          } catch {}
+        }
+      }
+    }
+
+    // Purge all tenant-scoped records from memoryStore
+    const filterByTenant = (arrName: string) => {
+      if (Array.isArray(store[arrName])) {
+        store[arrName] = store[arrName].filter((item: any) => item?.tenantId !== tenantId);
+      }
+    };
+
+    store.tenants = (store.tenants || []).filter((t: any) => t.id !== tenantId);
+    const tenantScopedArrays = [
+      'subscriptions',
+      'saasInvoices',
+      'tenantMembers',
+      'professionals',
+      'timeBlocks',
+      'services',
+      'clients',
+      'appointments',
+      'payments',
+      'notifications',
+      'cancellationRequests',
+      'refundRequests',
+      'expenses',
+      'financialTransactions',
+      'commissionRules',
+      'commissionRecords',
+      'whatsappConfigs',
+      'whatsappTemplates',
+      'whatsappMessages',
+      'whatsappReminders',
+      'whatsappWebhookEvents',
+      'businessLocations',
+      'waitlistEntries',
+      'waitlistOffers',
+      'loyaltyPrograms',
+      'loyaltyRewards',
+      'loyaltyLedgers',
+      'coupons',
+      'couponRedemptions',
+      'servicePackages',
+      'customerPackages',
+      'packageUsageLedgers',
+      'giftCards',
+      'giftCardTransactions',
+      'serviceReviews',
+      'marketingCampaigns',
+      'campaignRecipients',
+      'inventoryProducts',
+      'inventoryMovements',
+    ];
+    for (const arrName of tenantScopedArrays) {
+      filterByTenant(arrName);
+    }
+
+    if (Array.isArray(store.workingHours) && deletedProfIds.size > 0) {
+      store.workingHours = store.workingHours.filter(
+        (wh: any) => !deletedProfIds.has(wh?.professionalId)
+      );
+    }
+
+    // Remove orphaned staff users in memoryStore and rebind multi-store users to a remaining store
+    store.users = (store.users || []).reduce((acc: any[], u: any) => {
+      const isProtected =
+        Boolean(u.isMasterAdmin) ||
+        u.role === 'SUPER_ADMIN' ||
+        String(u.email || '').toLowerCase() === 'master@agendabeauty.com.br' ||
+        u.id === params.actorId ||
+        u.id === 'user-master-1';
+
+      if (isProtected) {
+        if (u.tenantId === tenantId) {
+          const fallbackTenant = (store.tenants || [])[0]?.id || 'biz-1';
+          acc.push({ ...u, tenantId: fallbackTenant });
+        } else {
+          acc.push(u);
+        }
+        return acc;
+      }
+
+      const remainingMembership = (store.tenantMembers || []).find((tm: any) => tm.userId === u.id);
+      const hasRemainingClientProfile = (store.clients || []).some(
+        (c: any) =>
+          c.userId === u.id ||
+          (u.email && String(c.email || '').toLowerCase() === String(u.email || '').toLowerCase()) ||
+          String(c.notes || '').includes(`userId:${u.id}`)
+      );
+
+      const wasLinkedToDeletedTenant =
+        candidateUserIds.has(u.id) || u.tenantId === tenantId || removedOrphanedUsers.includes(u.id);
+
+      if (wasLinkedToDeletedTenant) {
+        if (remainingMembership) {
+          acc.push({
+            ...u,
+            tenantId: remainingMembership.tenantId,
+            role: remainingMembership.role || u.role,
+          });
+          return acc;
+        }
+        if (u.role === 'CUSTOMER' || hasRemainingClientProfile) {
+          const nextTenant = (store.clients || []).find((c: any) => c.userId === u.id)?.tenantId || u.tenantId;
+          acc.push({ ...u, tenantId: nextTenant });
+          return acc;
+        }
+        // Orphaned staff-only user: drop cleanly
+        return acc;
+      }
+
+      acc.push(u);
+      return acc;
+    }, []);
+
+    // Preserve global audit log entry without referencing deleted Tenant FK
+    if (Array.isArray(store.auditLogs)) {
+      store.auditLogs = store.auditLogs.map((log: any) =>
+        log.tenantId === tenantId ? { ...log, tenantId: null } : log
+      );
+    }
+
+    lastFullSyncTimestamp = 0;
+
+    await db.recordAuditLog(null, params.actorId, 'SAAS_TENANT_DELETED', {
+      deletedTenantId: tenantId,
+      deletedTenantName: tenantName,
+      deletedTenantSlug: tenantSlug,
+      reason,
+      removedUsersCount: removedOrphanedUsers.length,
+    });
+
+    return {
+      deletedTenantId: tenantId,
+      deletedTenantName: tenantName,
+      deletedTenantSlug: tenantSlug,
+      reason,
+    };
   },
 };

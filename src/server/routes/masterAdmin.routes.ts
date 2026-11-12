@@ -202,6 +202,31 @@ router.get('/tenants/:tenantId', async (req, res, next) => {
 });
 
 /**
+ * DELETE /api/v1/master-admin/tenants/:tenantId
+ * Permanently deletes a store/establishment and its tenant-scoped records
+ */
+router.delete('/tenants/:tenantId', async (req: any, res, next) => {
+  try {
+    const { tenantId } = req.params;
+    const reason = req.body?.reason || req.query?.reason;
+
+    const result = await saasService.deleteTenant({
+      tenantId,
+      actorId: req.user?.id || 'user-master-1',
+      reason: reason ? String(reason).trim() : undefined,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: `Estabelecimento "${result.deletedTenantName}" excluído permanentemente com sucesso.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * PUT / PATCH /api/v1/master-admin/tenants/:tenantId/plan
  * Changes a tenant's commercial plan (SIMPLE | COMPLETE)
  */

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, Lock, Mail, ArrowRight, AlertCircle, Loader2, KeyRound } from 'lucide-react';
+import { AntiBotChallenge, BotGuardPayload } from './AntiBotChallenge';
 
 interface SuperAdminLoginScreenProps {
   onLoginSuccess: (user: any) => void;
@@ -14,6 +15,13 @@ export const SuperAdminLoginScreen: React.FC<SuperAdminLoginScreenProps> = ({
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [botResetKey, setBotResetKey] = useState(0);
+  const [botGuard, setBotGuard] = useState<BotGuardPayload>({
+    website: '',
+    challengeToken: '',
+    challengeAnswer: '',
+    formRenderedAt: Date.now(),
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,11 +33,17 @@ export const SuperAdminLoginScreen: React.FC<SuperAdminLoginScreenProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          portalType: 'SUPER_ADMIN',
+          botGuard,
+        }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.success) {
+        setBotResetKey((k) => k + 1);
         setError(data.error || 'Credenciais inválidas para o acesso Super Admin.');
         return;
       }
@@ -120,6 +134,8 @@ export const SuperAdminLoginScreen: React.FC<SuperAdminLoginScreenProps> = ({
               />
             </div>
           </div>
+
+          <AntiBotChallenge resetKey={botResetKey} theme="dark" onChange={setBotGuard} />
 
           <button
             type="submit"

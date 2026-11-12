@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Heart,
 } from 'lucide-react';
+import { AntiBotChallenge, BotGuardPayload } from './auth/AntiBotChallenge';
 
 interface AuthScreenProps {
   onLoginSuccess: (user: any) => void;
@@ -33,6 +34,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [botResetKey, setBotResetKey] = useState(0);
+  const [botGuard, setBotGuard] = useState<BotGuardPayload>({
+    website: '',
+    challengeToken: '',
+    challengeAnswer: '',
+    formRenderedAt: Date.now(),
+  });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +51,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, botGuard }),
       });
       const data = await res.json();
       if (data.success) {
@@ -52,6 +60,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
         }
         onLoginSuccess(data.data.user);
       } else {
+        setBotResetKey((k) => k + 1);
         setError(data.error || 'E-mail ou senha inválidos');
       }
     } catch {
@@ -70,7 +79,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name, email, phone, password, contactPreference }),
+        body: JSON.stringify({ name, email, phone, password, contactPreference, botGuard }),
       });
       const data = await res.json();
       if (data.success) {
@@ -79,6 +88,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
         }
         onLoginSuccess(data.data.user);
       } else {
+        setBotResetKey((k) => k + 1);
         setError(data.error || 'Erro ao criar conta de cliente');
       }
     } catch {
@@ -97,7 +107,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name, email, password, businessName, phone, plan: selectedPlan }),
+        body: JSON.stringify({ name, email, password, businessName, phone, plan: selectedPlan, botGuard }),
       });
       const data = await res.json();
       if (data.success) {
@@ -106,6 +116,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
         }
         onLoginSuccess(data.data.user);
       } else {
+        setBotResetKey((k) => k + 1);
         setError(data.error || 'Erro ao cadastrar empresa');
       }
     } catch {
@@ -124,9 +135,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
       const res = await fetch('/api/v1/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, botGuard }),
       });
       const data = await res.json();
+      setBotResetKey((k) => k + 1);
       if (data.success) {
         setSuccess('Instruções para redefinir a senha enviadas com sucesso!');
       } else {
@@ -242,6 +254,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
                   />
                 </div>
               </div>
+
+              <AntiBotChallenge resetKey={botResetKey} theme="light" onChange={setBotGuard} />
 
               <button
                 type="submit"
@@ -374,6 +388,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
                 </div>
               </div>
 
+              <AntiBotChallenge resetKey={botResetKey} theme="light" onChange={setBotGuard} />
+
               <button
                 type="submit"
                 disabled={loading}
@@ -494,6 +510,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
                 </div>
               </div>
 
+              <AntiBotChallenge resetKey={botResetKey} theme="light" onChange={setBotGuard} />
+
               <button
                 type="submit"
                 disabled={loading}
@@ -526,6 +544,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
                   />
                 </div>
               </div>
+
+              <AntiBotChallenge resetKey={botResetKey} theme="light" onChange={setBotGuard} />
 
               <button
                 type="submit"
