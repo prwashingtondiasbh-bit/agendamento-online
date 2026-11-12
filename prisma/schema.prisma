@@ -7,39 +7,100 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TenantStatus {
+  ACTIVE
+  BLOCKED
+  CANCELLED
+}
+
 model Tenant {
-  id            String          @id @default(uuid())
-  name          String
-  slug          String          @unique
-  phone         String?
-  email         String?
-  address       String?
-  timezone      String          @default("America/Sao_Paulo")
-  currency      String          @default("BRL")
-  openTime      String          @default("09:00")
-  closeTime     String          @default("19:00")
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  members       TenantMember[]
-  subscriptions Subscription[]
-  auditLogs     AuditLog[]
-  professionals Professional[]
-  clients       Client[]
-  services      Service[]
-  appointments  Appointment[]
+  id                              String                      @id @default(uuid()) @db.VarChar(36)
+  name                            String                      @db.VarChar(150)
+  slug                            String                      @unique(map: "slug") @db.VarChar(100)
+  description                     String?                     @db.Text
+  logoUrl                         String?                     @db.VarChar(500)
+  phone                           String?                     @db.VarChar(30)
+  email                           String?                     @db.VarChar(150)
+  address                         String?                     @db.VarChar(255)
+  timezone                        String                      @default("America/Sao_Paulo") @db.VarChar(100)
+  currency                        String                      @default("BRL") @db.VarChar(10)
+  openTime                        String                      @default("09:00") @db.VarChar(10)
+  closeTime                       String                      @default("19:00") @db.VarChar(10)
+  status                          TenantStatus                @default(ACTIVE)
+  isPublished                     Boolean                     @default(true)
+  blockedReason                   String?                     @db.Text
+  blockedAt                       DateTime?
+  blockedBy                       String?                     @db.VarChar(36)
+  cancelledAt                     DateTime?
+  cancelledReason                 String?                     @db.Text
+  requireDeposit                  Boolean                     @default(true)
+  defaultDeposit                  Int                         @default(30)
+  cancellationHoursLimit          Int                         @default(6)
+  allowCustomerReschedule         Boolean                     @default(true)
+  allowManualReviewOutOfPeriod    Boolean                     @default(true)
+  cancellationPolicyText          String?                     @db.Text
+  cancellationContactInstructions String?                     @db.Text
+  cancellationPolicyVersion       Int                         @default(1)
+  createdAt                       DateTime                    @default(now())
+  updatedAt                       DateTime                    @updatedAt
+  members                         TenantMember[]
+  subscriptions                   Subscription[]
+  saasInvoices                    SaaSInvoice[]
+  auditLogs                       AuditLog[]
+  professionals                   Professional[]
+  clients                         Client[]
+  services                        Service[]
+  appointments                    Appointment[]
+  payments                        Payment[]
+  webhookEvents                   WebhookEvent[]
+  timeBlocks                      TimeBlock[]
+  cancellationRequests            CancellationRequest[]
+  refundRequests                  RefundRequest[]
+  expenses                        Expense[]
+  financialTransactions           FinancialTransaction[]
+  commissionRules                 CommissionRule[]
+  commissionRecords               CommissionRecord[]
+  whatsappConfig                  WhatsAppConfig?
+  whatsappTemplates               WhatsAppTemplate[]
+  whatsappMessages                WhatsAppMessageQueue[]
+  whatsappReminders               WhatsAppScheduledReminder[]
+  whatsappWebhookEvents           WhatsAppWebhookEvent[]
+  businessLocations               BusinessLocation[]
+  waitlistEntries                 WaitlistEntry[]
+  waitlistOffers                  WaitlistOffer[]
+  loyaltyProgram                  LoyaltyProgram?
+  loyaltyRewards                  LoyaltyReward[]
+  loyaltyLedgers                  LoyaltyLedger[]
+  coupons                         Coupon[]
+  couponRedemptions               CouponRedemption[]
+  servicePackages                 ServicePackage[]
+  customerPackages                CustomerPackage[]
+  packageUsageLedgers             PackageUsageLedger[]
+  giftCards                       GiftCard[]
+  giftCardTransactions            GiftCardTransaction[]
+  serviceReviews                  ServiceReview[]
+  marketingCampaigns              MarketingCampaign[]
+  campaignRecipients              CampaignRecipient[]
+  inventoryProducts               InventoryProduct[]
+  inventoryMovements              InventoryMovement[]
+
+  @@index([status, isPublished], map: "Tenant_status_isPublished_idx")
 }
 
 model User {
-  id            String          @id @default(uuid())
-  name          String
-  email         String          @unique
-  passwordHash  String
-  resetToken    String?
+  id            String         @id @default(uuid()) @db.VarChar(36)
+  name          String         @db.VarChar(150)
+  email         String         @unique(map: "email") @db.VarChar(150)
+  phone         String?        @db.VarChar(30)
+  passwordHash  String         @db.VarChar(255)
+  resetToken    String?        @db.VarChar(255)
   resetExpires  DateTime?
-  active        Boolean         @default(true)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  isMasterAdmin Boolean        @default(false)
+  active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   memberships   TenantMember[]
+  clients       Client[]
   auditLogs     AuditLog[]
 }
 
@@ -49,23 +110,27 @@ enum Role {
   MANAGER
   RECEPTIONIST
   PROFESSIONAL
+  CUSTOMER
 }
 
 model TenantMember {
-  id          String   @id @default(uuid())
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  tenantId    String   @db.VarChar(36)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  userId      String   @db.VarChar(36)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict)
   role        Role     @default(PROFESSIONAL)
-  permissions Json?    @default("[]") // Specific permissions array or object
+  permissions Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@unique([tenantId, userId])
+  @@unique([tenantId, userId], map: "unique_tenant_user")
+  @@index([userId], map: "userId")
 }
 
 enum Plan {
+  SIMPLE
+  COMPLETE
   FREE
   PRO
   ENTERPRISE
@@ -73,97 +138,1104 @@ enum Plan {
 
 enum SubStatus {
   ACTIVE
+  PENDING_PAYMENT
   PAST_DUE
+  SUSPENDED
+  BLOCKED
   CANCELLED
 }
 
 model Subscription {
-  id          String    @id @default(uuid())
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  plan        Plan      @default(FREE)
-  status      SubStatus @default(ACTIVE)
-  expiresAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                   String        @id @default(uuid()) @db.VarChar(36)
+  tenantId             String        @db.VarChar(36)
+  tenant               Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  plan                 Plan          @default(COMPLETE)
+  status               SubStatus     @default(ACTIVE)
+  contractedPriceCents Int           @default(9990)
+  billingCycle         String        @default("MONTHLY") @db.VarChar(20)
+  startedAt            DateTime      @default(now())
+  expiresAt            DateTime?
+  nextBillingAt        DateTime?
+  cancelledAt          DateTime?
+  statusReason         String?       @db.Text
+  updatedBy            String?       @db.VarChar(36)
+  externalProviderRef  String?       @db.VarChar(191)
+  history              Json?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  invoices             SaaSInvoice[]
+
+  @@index([tenantId], map: "tenantId")
+  @@index([status, nextBillingAt], map: "Subscription_status_nextBillingAt_idx")
 }
 
 model AuditLog {
-  id          String   @id @default(uuid())
-  tenantId    String?
-  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action      String   // e.g. "APPOINTMENT_CREATE", "USER_LOGIN"
-  details     Json?
-  ipAddress   String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  tenantId  String?  @db.VarChar(36)
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  userId    String?  @db.VarChar(36)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  action    String   @db.VarChar(150)
+  details   Json?
+  ipAddress String?  @db.VarChar(50)
+  createdAt DateTime @default(now())
+
+  @@index([tenantId], map: "tenantId")
+  @@index([userId], map: "userId")
 }
 
 model Professional {
-  id           String         @id @default(uuid())
-  tenantId     String
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name         String
-  email        String?
-  phone        String?
-  avatarUrl    String?
-  specialty    String         @default("Nail Designer Geral")
-  active       Boolean        @default(true)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id           String                @id @default(uuid()) @db.VarChar(36)
+  tenantId     String                @db.VarChar(36)
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  name         String                @db.VarChar(150)
+  email        String?               @db.VarChar(150)
+  phone        String?               @db.VarChar(30)
+  avatarUrl    String?               @db.VarChar(500)
+  specialty    String?               @default("Nail Designer Geral") @db.VarChar(150)
+  active       Boolean               @default(true)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  services     ServiceProfessional[]
+  workingHours WorkingHour[]
+  timeBlocks   TimeBlock[]
   appointments Appointment[]
-}
 
-model Client {
-  id           String         @id @default(uuid())
-  tenantId     String
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name         String
-  phone        String
-  email        String?
-  notes        String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  appointments Appointment[]
+  @@index([tenantId], map: "tenantId")
 }
 
 model Service {
-  id           String         @id @default(uuid())
-  tenantId     String
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name         String
-  description  String?
-  durationMin  Int            @default(60)
-  price        Decimal        @db.Decimal(10, 2)
-  category     String         @default("Unhas")
-  active       Boolean        @default(true)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  appointments Appointment[]
+  id              String                @id @default(uuid()) @db.VarChar(36)
+  tenantId        String                @db.VarChar(36)
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  name            String                @db.VarChar(150)
+  description     String?               @db.Text
+  durationMin     Int                   @default(60)
+  price           Decimal               @default(0.00) @db.Decimal(10, 2)
+  category        String?               @default("Unhas") @db.VarChar(100)
+  active          Boolean               @default(true)
+  priceCents      Int                   @default(0)
+  bufferBeforeMin Int                   @default(0)
+  bufferAfterMin  Int                   @default(0)
+  preparationMin  Int                   @default(0)
+  depositPercent  Int                   @default(30)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  professionals   ServiceProfessional[]
+  appointments    Appointment[]
+
+  @@index([tenantId], map: "tenantId")
+}
+
+model ServiceProfessional {
+  id             String       @id @default(uuid()) @db.VarChar(36)
+  serviceId      String       @db.VarChar(36)
+  service        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  professionalId String       @db.VarChar(36)
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([serviceId, professionalId], map: "unique_service_prof")
+  @@index([professionalId], map: "professionalId")
+}
+
+model WorkingHour {
+  id             String       @id @default(uuid()) @db.VarChar(36)
+  professionalId String       @db.VarChar(36)
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  dayOfWeek      Int
+  startTime      String       @default("09:00") @db.VarChar(10)
+  endTime        String       @default("19:00") @db.VarChar(10)
+  breakStart     String?      @db.VarChar(10)
+  breakEnd       String?      @db.VarChar(10)
+
+  @@index([professionalId], map: "professionalId")
+}
+
+model TimeBlock {
+  id             String        @id @default(uuid()) @db.VarChar(36)
+  tenantId       String        @db.VarChar(36)
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  professionalId String?       @db.VarChar(36)
+  professional   Professional? @relation(fields: [professionalId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  type           BlockType     @default(DAY_OFF)
+  startDate      DateTime
+  endDate        DateTime
+  reason         String?       @db.VarChar(255)
+  createdBy      String?       @db.VarChar(36)
+  createdAt      DateTime      @default(now())
+
+  @@index([tenantId], map: "tenantId")
+  @@index([professionalId], map: "professionalId")
+}
+
+enum BlockType {
+  DAY_OFF
+  VACATION
+  BREAK
+  INTERVAL
+  LUNCH
+  PERSONAL
+  EXCEPTION
 }
 
 model Appointment {
-  id             String            @id @default(uuid())
-  tenantId       String
-  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  clientId       String
-  client         Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  professionalId String
-  professional   Professional      @relation(fields: [professionalId], references: [id], onDelete: Cascade)
-  serviceId      String
-  service        Service           @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  dateTime       DateTime
-  status         AppointmentStatus @default(CONFIRMED)
-  totalAmount    Decimal           @db.Decimal(10, 2)
-  notes          String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id                        String                @id @default(uuid()) @db.VarChar(36)
+  tenantId                  String                @db.VarChar(36)
+  tenant                    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  clientId                  String                @db.VarChar(36)
+  client                    Client                @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  professionalId            String                @db.VarChar(36)
+  professional              Professional          @relation(fields: [professionalId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  serviceId                 String                @db.VarChar(36)
+  service                   Service               @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  dateTime                  DateTime
+  endDateTime               DateTime?
+  status                    AppointmentStatus     @default(PENDING_PAYMENT)
+  origin                    String                @default("ONLINE") @db.VarChar(50)
+  expiresAt                 DateTime?
+  totalAmount               Decimal               @default(0.00) @db.Decimal(10, 2)
+  totalAmountCents          Int                   @default(0)
+  depositAmountCents        Int                   @default(0)
+  balanceAmountCents        Int                   @default(0)
+  snapshotPriceCents        Int                   @default(0)
+  snapshotDurationMin       Int                   @default(60)
+  snapshotDepositPercent    Int                   @default(30)
+  snapshotDepositCents      Int                   @default(0)
+  snapshotBalanceCents      Int                   @default(0)
+  snapshotCancellationHours Int?
+  snapshotPolicyText        String?               @db.Text
+  snapshotPolicyVersion     Int?
+  policyAcceptedAt          DateTime?
+  rescheduledFromDateTime   DateTime?
+  rescheduledAt             DateTime?
+  rescheduleCount           Int                   @default(0)
+  rescheduleHistory         Json?
+  createdBy                 String?               @db.VarChar(36)
+  updatedBy                 String?               @db.VarChar(36)
+  startedAt                 DateTime?
+  completedAt               DateTime?
+  noShowAt                  DateTime?
+  locationId                String?               @db.VarChar(36)
+  couponCode                String?               @db.VarChar(100)
+  discountCents             Int                   @default(0)
+  notes                     String?               @db.Text
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  payments                  Payment[]
+  cancellationRequests      CancellationRequest[]
+  refundRequests            RefundRequest[]
+
+  @@index([tenantId], map: "tenantId")
+  @@index([clientId], map: "clientId")
+  @@index([professionalId], map: "professionalId")
+  @@index([serviceId], map: "serviceId")
+  @@index([professionalId, dateTime, endDateTime], map: "idx_appointment_prof_datetime")
+  @@index([tenantId, dateTime], map: "idx_appointment_tenant_datetime")
+}
+
+model Client {
+  id                          String                @id @default(uuid()) @db.VarChar(36)
+  tenantId                    String                @db.VarChar(36)
+  tenant                      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  userId                      String?               @db.VarChar(36)
+  user                        User?                 @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  name                        String                @db.VarChar(150)
+  phone                       String                @db.VarChar(30)
+  email                       String?               @db.VarChar(150)
+  notes                       String?               @db.Text
+  preferences                 String?               @db.Text
+  internalNotes               Json?
+  tags                        Json?
+  communicationConsent        Json?
+  normalizedPhone             String?               @db.VarChar(32)
+  whatsappOptIn               Boolean               @default(true)
+  promotionalConsent          Boolean               @default(false)
+  promotionalConsentAt        DateTime?
+  promotionalConsentSource    String?               @db.VarChar(100)
+  promotionalConsentRevokedAt DateTime?
+  active                      Boolean               @default(true)
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt
+  appointments                Appointment[]
+  cancellationRequests        CancellationRequest[]
+  refundRequests              RefundRequest[]
+
+  @@index([tenantId], map: "tenantId")
+  @@index([userId], map: "Client_userId_idx")
+  @@index([tenantId, userId], map: "Client_tenantId_userId_idx")
+  @@index([tenantId, phone], map: "Client_tenantId_phone_idx")
+  @@index([tenantId, normalizedPhone], map: "Client_tenantId_normalizedPhone_idx")
 }
 
 enum AppointmentStatus {
+  PENDING_PAYMENT
   PENDING
   CONFIRMED
+  IN_PROGRESS
   COMPLETED
   CANCELLED
+  EXPIRED
+  NO_SHOW
 }
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  REFUND_PENDING
+  REFUNDED
+}
+
+model Payment {
+  id                   String          @id @default(uuid()) @db.VarChar(36)
+  tenantId             String          @db.VarChar(36)
+  tenant               Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  appointmentId        String          @db.VarChar(36)
+  appointment          Appointment     @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  provider             String          @default("MERCADO_PAGO") @db.VarChar(50)
+  providerPaymentId    String?         @db.VarChar(100)
+  externalReference    String          @unique(map: "externalReference") @db.VarChar(150)
+  idempotencyKey       String          @unique(map: "idempotencyKey") @db.VarChar(150)
+  paymentType          String          @default("DEPOSIT") @db.VarChar(50)
+  amountCents          Int
+  feeCents             Int?
+  netAmountCents       Int?
+  refundedAmountCents  Int             @default(0)
+  currency             String          @default("BRL") @db.VarChar(10)
+  status               PaymentStatus   @default(CREATED)
+  paymentMethod        String          @default("PIX") @db.VarChar(50)
+  reconciliationStatus String          @default("RECONCILED") @db.VarChar(60)
+  qrCode               String?         @db.Text
+  qrCodeBase64         String?         @db.LongText
+  ticketUrl            String?         @db.VarChar(500)
+  expiresAt            DateTime?
+  approvedAt           DateTime?
+  rawResponse          Json?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  refundRequests       RefundRequest[]
+
+  @@index([appointmentId], map: "idx_payment_appointment")
+  @@index([providerPaymentId], map: "idx_payment_provider_id")
+  @@index([tenantId, status], map: "idx_payment_tenant_status")
+}
+
+enum WebhookProcessingStatus {
+  PENDING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+model WebhookEvent {
+  id               String                  @id @default(uuid()) @db.VarChar(36)
+  tenantId         String?                 @db.VarChar(36)
+  tenant           Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  provider         String                  @default("MERCADO_PAGO") @db.VarChar(50)
+  providerEventId  String?                 @db.VarChar(150)
+  resourceId       String?                 @db.VarChar(150)
+  eventType        String                  @db.VarChar(100)
+  payload          Json?
+  processingStatus WebhookProcessingStatus @default(PENDING)
+  attempts         Int                     @default(1)
+  receivedAt       DateTime                @default(now())
+  processedAt      DateTime?
+  lastError        String?                 @db.Text
+
+  @@unique([provider, providerEventId], map: "unique_provider_event")
+  @@index([tenantId], map: "tenantId")
+}
+
+enum CancellationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum RefundRequestStatus {
+  NOT_REQUESTED
+  PENDING_REVIEW
+  APPROVED
+  PROCESSING
+  COMPLETED
+  FAILED
+  REJECTED
+}
+
+model CancellationRequest {
+  id                        String                    @id @default(uuid()) @db.VarChar(36)
+  referenceCode             String                    @unique @db.VarChar(100)
+  tenantId                  String                    @db.VarChar(36)
+  tenant                    Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  appointmentId             String                    @db.VarChar(36)
+  appointment               Appointment               @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  clientId                  String                    @db.VarChar(36)
+  client                    Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  status                    CancellationRequestStatus @default(PENDING)
+  refundStatus              RefundRequestStatus       @default(NOT_REQUESTED)
+  reason                    String?                   @db.Text
+  isWithinPolicy            Boolean                   @default(false)
+  isEligibleForRefund       Boolean                   @default(false)
+  hoursNoticeCalculated     Float
+  snapshotCancellationHours Int?
+  snapshotPolicyText        String?                   @db.Text
+  snapshotPolicyVersion     Int?
+  deadlineCalculatedAt      DateTime
+  paidDepositCents          Int                       @default(0)
+  refundableAmountCents     Int                       @default(0)
+  adminDecisionBy           String?                   @db.VarChar(36)
+  adminDecisionAt           DateTime?
+  adminJustification        String?                   @db.Text
+  isManualException         Boolean                   @default(false)
+  history                   Json?
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  refundRequests            RefundRequest[]
+
+  @@index([tenantId, status])
+  @@index([appointmentId])
+  @@index([clientId])
+}
+
+model RefundRequest {
+  id                    String              @id @default(uuid()) @db.VarChar(36)
+  tenantId              String              @db.VarChar(36)
+  tenant                Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  cancellationRequestId String              @db.VarChar(36)
+  cancellationRequest   CancellationRequest @relation(fields: [cancellationRequestId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  appointmentId         String              @db.VarChar(36)
+  appointment           Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  clientId              String              @db.VarChar(36)
+  client                    Client              @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  paymentId             String?             @db.VarChar(36)
+  payment               Payment?            @relation(fields: [paymentId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  provider              String              @default("MERCADO_PAGO") @db.VarChar(50)
+  providerPaymentId     String?             @db.VarChar(100)
+  providerRefundId      String?             @db.VarChar(100)
+  idempotencyKey        String              @unique @db.VarChar(150)
+  amountCents           Int
+  status                RefundRequestStatus @default(PENDING_REVIEW)
+  authorizedBy          String?             @db.VarChar(36)
+  authorizedAt          DateTime?
+  processedAt           DateTime?
+  completedAt           DateTime?
+  lastError             String?             @db.Text
+  rawResponse           Json?
+  history               Json?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([tenantId, status])
+  @@index([cancellationRequestId])
+  @@index([appointmentId])
+  @@index([paymentId])
+}
+
+enum ExpenseStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REVERSED
+}
+
+model Expense {
+  id                 String        @id @default(uuid()) @db.VarChar(36)
+  tenantId           String        @db.VarChar(36)
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  description        String        @db.VarChar(255)
+  category           String        @default("OUTRAS") @db.VarChar(100)
+  amountCents        Int
+  competenceDate     DateTime
+  dueDate            DateTime
+  paidAt             DateTime?
+  status             ExpenseStatus @default(PENDING)
+  paymentMethod      String?       @db.VarChar(60)
+  notes              String?       @db.Text
+  createdBy          String?       @db.VarChar(36)
+  paidBy             String?       @db.VarChar(36)
+  cancelledBy        String?       @db.VarChar(36)
+  cancellationReason String?       @db.Text
+  history            Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+  @@index([tenantId, competenceDate])
+}
+
+enum LedgerTransactionType {
+  INFLOW
+  OUTFLOW
+  ADJUSTMENT
+  REVERSAL
+}
+
+enum LedgerTransactionStatus {
+  CONFIRMED
+  REVERSED
+  FLAGGED_FOR_REVIEW
+}
+
+model FinancialTransaction {
+  id                        String                  @id @default(uuid()) @db.VarChar(36)
+  tenantId                  String                  @db.VarChar(36)
+  tenant                    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  uniqueRef                 String                  @db.VarChar(150)
+  type                      LedgerTransactionType
+  origin                    String                  @db.VarChar(100)
+  originId                  String?                 @db.VarChar(36)
+  amountCents               Int
+  feeCents                  Int?
+  netAmountCents            Int
+  category                  String                  @db.VarChar(100)
+  description               String                  @db.VarChar(255)
+  paymentMethod             String?                 @db.VarChar(60)
+  actorId                   String?                 @db.VarChar(36)
+  actorName                 String?                 @db.VarChar(150)
+  status                    LedgerTransactionStatus @default(CONFIRMED)
+  reconciliationStatus      String                  @default("RECONCILED") @db.VarChar(60)
+  reconciliationDiscrepancy String?                 @db.Text
+  justification             String?                 @db.Text
+  history                   Json?
+  occurredAt                DateTime                @default(now())
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+
+  @@unique([tenantId, uniqueRef])
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, type, status])
+}
+
+model CommissionRule {
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  tenantId       String   @db.VarChar(36)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  scope          String   @db.VarChar(60)
+  professionalId String?  @db.VarChar(36)
+  serviceId      String?  @db.VarChar(36)
+  percentage     Int
+  fixedCents     Int      @default(0)
+  basis          String   @default("COMPLETED_SERVICE_VALUE") @db.VarChar(60)
+  active         Boolean  @default(true)
+  createdBy      String?  @db.VarChar(36)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([tenantId, active])
+  @@index([tenantId, professionalId, serviceId])
+}
+
+enum CommissionStatus {
+  NO_RULE_CONFIGURED
+  PENDING_CALCULATION
+  CALCULATED
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+model CommissionRecord {
+  id                    String           @id @default(uuid()) @db.VarChar(36)
+  tenantId              String           @db.VarChar(36)
+  tenant                Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  appointmentId         String           @db.VarChar(36)
+  professionalId        String           @db.VarChar(36)
+  serviceId             String           @db.VarChar(36)
+  ruleId                String?          @db.VarChar(36)
+  ruleScope             String?          @db.VarChar(60)
+  percentageApplied     Int              @default(0)
+  baseAmountCents       Int              @default(0)
+  commissionAmountCents Int              @default(0)
+  status                CommissionStatus @default(PENDING_CALCULATION)
+  approvedBy            String?          @db.VarChar(36)
+  approvedAt            DateTime?
+  paidBy                String?          @db.VarChar(36)
+  paidAt                DateTime?
+  cancelledBy           String?          @db.VarChar(36)
+  cancelledAt           DateTime?
+  adjustmentReason      String?          @db.Text
+  history               Json?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@unique([tenantId, appointmentId])
+  @@index([tenantId, professionalId, status])
+}
+
+enum WhatsAppIntegrationStatus {
+  DISCONNECTED
+  PENDING_CREDENTIALS
+  CONNECTED
+  ERROR
+}
+
+model WhatsAppConfig {
+  id                        String                    @id @default(uuid()) @db.VarChar(36)
+  tenantId                  String                    @unique @db.VarChar(36)
+  tenant                    Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  provider                  String                    @default("META_CLOUD_API") @db.VarChar(100)
+  status                    WhatsAppIntegrationStatus @default(PENDING_CREDENTIALS)
+  displayName               String?                   @db.VarChar(191)
+  businessPhone             String?                   @db.VarChar(64)
+  phoneNumberId             String?                   @db.VarChar(191)
+  wabaId                    String?                   @db.VarChar(191)
+  encryptedAccessToken      String?                   @db.Text
+  webhookVerifyToken        String?                   @db.VarChar(191)
+  encryptedAppSecret        String?                   @db.Text
+  enableBookingConfirmation Boolean                   @default(true)
+  enableReminders           Boolean                   @default(true)
+  enableRescheduleAlerts    Boolean                   @default(true)
+  enableCancellationAlerts  Boolean                   @default(true)
+  enablePaymentAlerts       Boolean                   @default(true)
+  enableRefundAlerts        Boolean                   @default(true)
+  reminder24hEnabled        Boolean                   @default(true)
+  reminder3hEnabled         Boolean                   @default(true)
+  customReminderHours       Int?
+  customReminderEnabled     Boolean                   @default(false)
+  allowedWindowStart        String                    @default("08:00") @db.VarChar(16)
+  allowedWindowEnd          String                    @default("20:00") @db.VarChar(16)
+  lastTestedAt              DateTime?
+  lastError                 String?                   @db.Text
+  updatedBy                 String?                   @db.VarChar(36)
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+
+  @@index([phoneNumberId])
+  @@index([wabaId])
+}
+
+enum WhatsAppTemplateStatus {
+  APPROVED
+  PENDING
+  REJECTED
+  PAUSED
+}
+
+model WhatsAppTemplate {
+  id              String                 @id @default(uuid()) @db.VarChar(36)
+  tenantId        String                 @db.VarChar(36)
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  eventType       String                 @db.VarChar(100)
+  templateName    String                 @db.VarChar(191)
+  language        String                 @default("pt_BR") @db.VarChar(32)
+  category        String                 @default("UTILITY") @db.VarChar(64)
+  status          WhatsAppTemplateStatus @default(APPROVED)
+  bodyPreview     String                 @db.Text
+  variablesSchema Json?
+  active          Boolean                @default(true)
+  updatedBy       String?                @db.VarChar(36)
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@unique([tenantId, eventType])
+  @@index([tenantId, status])
+}
+
+enum WhatsAppMessageStatus {
+  PENDING
+  PROCESSING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  CANCELLED
+}
+
+model WhatsAppMessageQueue {
+  id                String                @id @default(uuid()) @db.VarChar(36)
+  tenantId          String                @db.VarChar(36)
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  clientId          String?               @db.VarChar(36)
+  appointmentId     String?               @db.VarChar(36)
+  referenceId       String?               @db.VarChar(36)
+  eventType         String                @db.VarChar(100)
+  messageCategory   String                @default("OPERATIONAL") @db.VarChar(64)
+  recipientPhone    String                @db.VarChar(64)
+  templateName      String?               @db.VarChar(191)
+  templateLanguage  String?               @default("pt_BR") @db.VarChar(32)
+  templateVariables Json?
+  renderedBody      String?               @db.Text
+  idempotencyKey    String                @unique @db.VarChar(191)
+  provider          String                @default("META_CLOUD_API") @db.VarChar(100)
+  providerMessageId String?               @db.VarChar(191)
+  status            WhatsAppMessageStatus @default(PENDING)
+  attempts          Int                   @default(0)
+  maxAttempts       Int                   @default(3)
+  nextAttemptAt     DateTime?
+  lockedAt          DateTime?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  cancelledAt       DateTime?
+  isPermanentError  Boolean               @default(false)
+  errorCode         String?               @db.VarChar(100)
+  errorMessage      String?               @db.Text
+  requestedBy       String?               @db.VarChar(36)
+  statusHistory     Json?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, clientId])
+  @@index([tenantId, appointmentId])
+  @@index([providerMessageId])
+}
+
+model WhatsAppScheduledReminder {
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  tenantId       String   @db.VarChar(36)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  appointmentId  String   @db.VarChar(36)
+  clientId       String   @db.VarChar(36)
+  reminderType   String   @db.VarChar(64)
+  leadTimeHours  Int
+  scheduledFor   DateTime
+  status         String   @default("SCHEDULED") @db.VarChar(64)
+  messageQueueId String?  @db.VarChar(36)
+  skipReason     String?  @db.VarChar(255)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([tenantId, appointmentId, reminderType], map: "WhatsAppReminder_tenant_app_type_key")
+  @@index([tenantId, status, scheduledFor], map: "WhatsAppReminder_tenant_status_sched_idx")
+}
+
+model WhatsAppWebhookEvent {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  tenantId        String?  @db.VarChar(36)
+  tenant          Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  providerEventId String   @unique @db.VarChar(191)
+  wabaId          String?  @db.VarChar(191)
+  phoneNumberId   String?  @db.VarChar(191)
+  wamid           String?  @db.VarChar(191)
+  eventStatus     String?  @db.VarChar(64)
+  payload         Json?
+  processedAt     DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([wamid])
+}
+
+// ==========================================
+// ETAPA 11: RECURSOS AVANÇADOS DO AGENDA BEAUTY
+// ==========================================
+
+model BusinessLocation {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  tenantId        String   @db.VarChar(36)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  name            String   @db.VarChar(191)
+  address         String?  @db.VarChar(255)
+  phone           String?  @db.VarChar(64)
+  timezone        String   @default("America/Sao_Paulo") @db.VarChar(64)
+  openTime        String   @default("08:00") @db.VarChar(16)
+  closeTime       String   @default("20:00") @db.VarChar(16)
+  professionalIds Json?
+  serviceIds      Json?
+  isMain          Boolean  @default(false)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, active])
+}
+
+model WaitlistEntry {
+  id                 String   @id @default(uuid()) @db.VarChar(36)
+  tenantId           String   @db.VarChar(36)
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  clientId           String   @db.VarChar(36)
+  serviceId          String   @db.VarChar(36)
+  professionalId     String?  @db.VarChar(36)
+  locationId         String?  @db.VarChar(36)
+  desiredDate        String   @db.VarChar(32)
+  preferredPeriod    String   @default("ANY") @db.VarChar(32)
+  preferredStartTime String?  @db.VarChar(16)
+  preferredEndTime   String?  @db.VarChar(16)
+  alternativeDays    Json?
+  priority           Int      @default(1)
+  status             String   @default("WAITING") @db.VarChar(32)
+  notes              String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([tenantId, status, desiredDate])
+  @@index([tenantId, clientId])
+}
+
+model WaitlistOffer {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  tenantId        String   @db.VarChar(36)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  waitlistEntryId String   @db.VarChar(36)
+  clientId        String   @db.VarChar(36)
+  serviceId       String   @db.VarChar(36)
+  professionalId  String   @db.VarChar(36)
+  slotDateTime    DateTime
+  slotEndDateTime DateTime
+  status          String   @default("PENDING") @db.VarChar(32)
+  expiresAt       DateTime
+  appointmentId   String?  @db.VarChar(36)
+  sentViaChannel  String?  @db.VarChar(32)
+  createdBy       String?  @db.VarChar(36)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, status, slotDateTime])
+  @@index([waitlistEntryId])
+}
+
+model LoyaltyProgram {
+  id                   String   @id @default(uuid()) @db.VarChar(36)
+  tenantId             String   @unique @db.VarChar(36)
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  name                 String   @default("Clube de Fidelidade Agenda Beauty") @db.VarChar(191)
+  active               Boolean  @default(true)
+  pointsPerReal        Int      @default(1)
+  pointsExpirationDays Int?     @default(365)
+  minRedemptionPoints  Int      @default(50)
+  eligibleServiceIds   Json?
+  eligibleCategories   Json?
+  reversalRuleOnRefund String   @default("PROPORTIONAL") @db.VarChar(32)
+  rulesDescription     String?  @db.Text
+  updatedBy            String?  @db.VarChar(36)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model LoyaltyReward {
+  id                      String   @id @default(uuid()) @db.VarChar(36)
+  tenantId                String   @db.VarChar(36)
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  name                    String   @db.VarChar(191)
+  description             String?  @db.Text
+  pointsRequired          Int
+  rewardType              String   @default("DISCOUNT_CENTS") @db.VarChar(64)
+  discountCents           Int      @default(0)
+  serviceId               String?  @db.VarChar(36)
+  maxRedemptionsPerClient Int?
+  active                  Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([tenantId, active])
+}
+
+model LoyaltyLedger {
+  id             String    @id @default(uuid()) @db.VarChar(36)
+  tenantId       String    @db.VarChar(36)
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  clientId       String    @db.VarChar(36)
+  type           String    @db.VarChar(64)
+  pointsDelta    Int
+  balanceAfter   Int
+  referenceType  String    @db.VarChar(64)
+  referenceId    String    @db.VarChar(36)
+  idempotencyKey String    @unique @db.VarChar(191)
+  description    String    @db.VarChar(255)
+  justification  String?   @db.Text
+  actorId        String?   @db.VarChar(36)
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([tenantId, clientId, createdAt])
+}
+
+model Coupon {
+  id                      String    @id @default(uuid()) @db.VarChar(36)
+  tenantId                String    @db.VarChar(36)
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  code                    String    @db.VarChar(100)
+  name                    String    @db.VarChar(191)
+  description             String?   @db.Text
+  discountType            String    @default("PERCENTAGE") @db.VarChar(32)
+  discountValue           Int
+  maxDiscountCents        Int?
+  minPurchaseCents        Int       @default(0)
+  startsAt                DateTime?
+  endsAt                  DateTime?
+  maxTotalUses            Int?
+  maxUsesPerClient        Int       @default(1)
+  firstPurchaseOnly       Boolean   @default(false)
+  eligibleServiceIds      Json?
+  eligibleProfessionalIds Json?
+  allowedClientIds        Json?
+  allowStacking           Boolean   @default(false)
+  campaignId              String?   @db.VarChar(36)
+  active                  Boolean   @default(true)
+  createdBy               String?   @db.VarChar(36)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId, active])
+}
+
+model CouponRedemption {
+  id               String   @id @default(uuid()) @db.VarChar(36)
+  tenantId         String   @db.VarChar(36)
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  couponId         String   @db.VarChar(36)
+  couponCode       String   @db.VarChar(100)
+  clientId         String   @db.VarChar(36)
+  appointmentId    String?  @db.VarChar(36)
+  status           String   @default("RESERVED") @db.VarChar(32)
+  orderAmountCents Int
+  discountCents    Int
+  finalAmountCents Int
+  idempotencyKey   String   @unique @db.VarChar(191)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([tenantId, couponId, status])
+  @@index([tenantId, clientId, couponId])
+}
+
+model ServicePackage {
+  id                     String   @id @default(uuid()) @db.VarChar(36)
+  tenantId               String   @db.VarChar(36)
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  name                   String   @db.VarChar(191)
+  description            String?  @db.Text
+  items                  Json
+  totalPriceCents        Int
+  validityDays           Int      @default(90)
+  allowedProfessionalIds Json?
+  allowManualRenewal     Boolean  @default(true)
+  cancellationPolicy     String?  @db.Text
+  active                 Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([tenantId, active])
+}
+
+model CustomerPackage {
+  id             String    @id @default(uuid()) @db.VarChar(36)
+  tenantId       String    @db.VarChar(36)
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  packageId      String    @db.VarChar(36)
+  clientId       String    @db.VarChar(36)
+  status         String    @default("PENDING_PAYMENT") @db.VarChar(32)
+  pricePaidCents Int
+  paymentId      String?   @db.VarChar(36)
+  remainingItems Json
+  expiresAt      DateTime?
+  purchasedAt    DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([tenantId, clientId, status])
+}
+
+model PackageUsageLedger {
+  id                String   @id @default(uuid()) @db.VarChar(36)
+  tenantId          String   @db.VarChar(36)
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  customerPackageId String   @db.VarChar(36)
+  clientId          String   @db.VarChar(36)
+  serviceId         String   @db.VarChar(36)
+  appointmentId     String?  @db.VarChar(36)
+  action            String   @db.VarChar(32)
+  creditsDelta      Int
+  idempotencyKey    String   @unique @db.VarChar(191)
+  actorId           String?  @db.VarChar(36)
+  notes             String?  @db.VarChar(255)
+  createdAt         DateTime @default(now())
+
+  @@index([tenantId, customerPackageId])
+}
+
+model GiftCard {
+  id                  String    @id @default(uuid()) @db.VarChar(36)
+  tenantId            String    @db.VarChar(36)
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  code                String    @unique @db.VarChar(100)
+  initialBalanceCents Int
+  currentBalanceCents Int
+  status              String    @default("PENDING_PAYMENT") @db.VarChar(32)
+  purchaserClientId   String?   @db.VarChar(36)
+  recipientName       String?   @db.VarChar(191)
+  recipientPhone      String?   @db.VarChar(64)
+  personalMessage     String?   @db.Text
+  allowPartialUse     Boolean   @default(true)
+  paymentId           String?   @db.VarChar(36)
+  expiresAt           DateTime?
+  blockedReason       String?   @db.Text
+  blockedBy           String?   @db.VarChar(36)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, code])
+}
+
+model GiftCardTransaction {
+  id                String   @id @default(uuid()) @db.VarChar(36)
+  tenantId          String   @db.VarChar(36)
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  giftCardId        String   @db.VarChar(36)
+  type              String   @db.VarChar(32)
+  amountCentsDelta  Int
+  balanceAfterCents Int
+  appointmentId     String?  @db.VarChar(36)
+  idempotencyKey    String   @unique @db.VarChar(191)
+  actorId           String?  @db.VarChar(36)
+  justification     String?  @db.Text
+  createdAt         DateTime @default(now())
+
+  @@index([tenantId, giftCardId])
+}
+
+model ServiceReview {
+  id             String    @id @default(uuid()) @db.VarChar(36)
+  tenantId       String    @db.VarChar(36)
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  appointmentId  String    @unique @db.VarChar(36)
+  clientId       String    @db.VarChar(36)
+  serviceId      String    @db.VarChar(36)
+  professionalId String    @db.VarChar(36)
+  rating         Int
+  comment        String?   @db.Text
+  replyText      String?   @db.Text
+  repliedBy      String?   @db.VarChar(36)
+  repliedAt      DateTime?
+  hidden         Boolean   @default(false)
+  hiddenReason   String?   @db.Text
+  hiddenBy       String?   @db.VarChar(36)
+  hiddenAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([tenantId, serviceId])
+  @@index([tenantId, professionalId])
+}
+
+model MarketingCampaign {
+  id                  String    @id @default(uuid()) @db.VarChar(36)
+  tenantId            String    @db.VarChar(36)
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  name                String    @db.VarChar(191)
+  objective           String    @db.VarChar(255)
+  segmentType         String    @db.VarChar(64)
+  segmentFilters      Json?
+  couponCode          String?   @db.VarChar(100)
+  templateName        String    @default("agenda_beauty_Novidades_mkt_v1") @db.VarChar(191)
+  messagePreview      String    @db.Text
+  status              String    @default("DRAFT") @db.VarChar(32)
+  estimatedRecipients Int       @default(0)
+  dispatchedBy        String?   @db.VarChar(36)
+  dispatchedAt        DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([tenantId, status])
+}
+
+model CampaignRecipient {
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  tenantId       String   @db.VarChar(36)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  campaignId     String   @db.VarChar(36)
+  clientId       String   @db.VarChar(36)
+  recipientPhone String   @db.VarChar(64)
+  status         String   @default("PENDING") @db.VarChar(64)
+  whatsappMsgId  String?  @db.VarChar(191)
+  errorReason    String?  @db.VarChar(255)
+  idempotencyKey String   @unique @db.VarChar(191)
+  createdAt      DateTime @default(now())
+
+  @@unique([campaignId, clientId])
+  @@index([tenantId, campaignId])
+}
+
+model InventoryProduct {
+  id                 String   @id @default(uuid()) @db.VarChar(36)
+  tenantId           String   @db.VarChar(36)
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  name               String   @db.VarChar(191)
+  sku                String   @db.VarChar(100)
+  category           String   @default("INSUMOS") @db.VarChar(100)
+  unit               String   @default("UN") @db.VarChar(32)
+  currentQuantity    Int      @default(0)
+  minQuantity        Int      @default(5)
+  unitCostCents      Int      @default(0)
+  salePriceCents     Int?
+  serviceConsumption Json?
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, active])
+}
+
+model InventoryMovement {
+  id               String   @id @default(uuid()) @db.VarChar(36)
+  tenantId         String   @db.VarChar(36)
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  productId        String   @db.VarChar(36)
+  type             String   @db.VarChar(64)
+  quantityDelta    Int
+  previousQuantity Int
+  newQuantity      Int
+  unitCostCents    Int?
+  reason           String   @db.Text
+  referenceId      String?  @db.VarChar(36)
+  idempotencyKey   String   @unique @db.VarChar(191)
+  actorId          String   @db.VarChar(36)
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId, productId, createdAt])
+}
+
+model SaaSPlanCatalog {
+  id                String   @id @default(uuid()) @db.VarChar(36)
+  code              Plan     @unique
+  name              String   @db.VarChar(150)
+  description       String?  @db.Text
+  defaultPriceCents Int
+  allowDeposit      Boolean  @default(false)
+  features          Json?
+  active            Boolean  @default(true)
+  updatedBy         String?  @db.VarChar(36)
+  priceHistory      Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+enum SaaSInvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model SaaSInvoice {
+  id                String            @id @default(uuid()) @db.VarChar(36)
+  tenantId          String            @db.VarChar(36)
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  subscriptionId    String            @db.VarChar(36)
+  subscription      Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  plan              Plan              @default(COMPLETE)
+  amountCents       Int
+  dueDate           DateTime
+  paidAt            DateTime?
+  status            SaaSInvoiceStatus @default(PENDING)
+  paymentMethod     String?           @db.VarChar(50)
+  externalReference String?           @db.VarChar(191)
+  notes             String?           @db.Text
+  createdBy         String?           @db.VarChar(36)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([tenantId, status, dueDate], map: "SaaSInvoice_tenantId_status_dueDate_idx")
+  @@index([subscriptionId], map: "SaaSInvoice_subscriptionId_idx")
+}
+

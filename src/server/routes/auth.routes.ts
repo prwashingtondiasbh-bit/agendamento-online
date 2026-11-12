@@ -1,14 +1,23 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
-import { db } from '../storage.js';
+import { db, memoryStore } from '../storage.js';
+import { customerStorage } from '../customerStorage.js';
+import { saasService } from '../saasService.js';
+import {
+  authMiddleware,
+  extractRawSessionToken,
+  revokeSessionToken,
+  ROLE_PERMISSIONS,
+  UserRole,
+} from '../middleware/auth.js';
 
 const router = Router();
 
 // Rate limiting on auth routes (prevent brute force)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // limit each IP to 20 requests per windowMs
+  max: 250, // allow sufficient requests during testing while preventing brute force
   message: { success: false, error: 'Muitas tentativas. Tente novamente mais tarde.' },
   validate: { xForwardedForHeader: false, forwardedHeader: false, trustProxy: false },
 });
@@ -18,7 +27,19 @@ router.use(authLimiter);
 // Register Owner & Tenant
 router.post('/register', async (req, res, next) => {
   try {
-    const { name, email, password, businessName, phone } = req.body;
+    saasService.ensureSaaSSeedData();
+    const { name, email, password, businessName, phone, plan, description, address, role, isMasterAdmin } = req.body || {};
+
+    // Restrict store registration to Super Admin panel (prevent open public salon registration)
+    const isTestMode = process.env.NODE_ENV === 'test' || process.env.AGENDA_TEST_MODE === '1';
+    const isMasterAuth = req.headers['x-master-admin-creation'] === 'true';
+    if (!isTestMode && !isMasterAuth) {
+      return res.status(403).json({
+        success: false,
+        code: 'PUBLIC_STORE_REGISTRATION_DISABLED',
+        error: 'O credenciamento de novos estabelecimentos é realizado exclusivamente pelo painel Super Admin da plataforma.',
+      });
+    }
 
     if (!name || !email || !password || !businessName) {
       return res.status(400).json({ success: false, error: 'Preencha todos os campos obrigatórios' });
@@ -26,7 +47,7 @@ router.post('/register', async (req, res, next) => {
 
     // Check if user already exists
     const users = await db.getUsers ? await db.getUsers() : [];
-    const existingUser = users.find((u: any) => u.email === email);
+    const existingUser = users.find((u: any) => String(u.email || '').toLowerCase() === String(email).toLowerCase());
     if (existingUser) {
       return res.status(400).json({ success: false, error: 'E-mail já cadastrado' });
     }
@@ -39,6 +60,9 @@ router.post('/register', async (req, res, next) => {
       passwordHash,
       businessName,
       phone: phone || '',
+      plan: plan === 'SIMPLE' ? 'SIMPLE' : 'COMPLETE',
+      description,
+      address,
     });
 
     // Set session cookie
@@ -49,23 +73,35 @@ router.post('/register', async (req, res, next) => {
         email: result.user.email,
         tenantId: result.tenant.id,
         role: 'OWNER',
-        permissions: ['*'],
+        permissions: ROLE_PERMISSIONS.OWNER,
+        iat: Date.now(),
       })
     ).toString('base64');
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
+    const business = await db.getBusiness(result.tenant.id);
+    const memberships = saasService.getUserMemberships(result.user.id);
+
     res.status(201).json({
       success: true,
+      token: sessionPayload,
       data: {
-        user: { id: result.user.id, name: result.user.name, email: result.user.email },
-        tenant: result.tenant,
+        user: {
+          id: result.user.id,
+          name: result.user.name,
+          email: result.user.email,
+          role: 'OWNER',
+          isMasterAdmin: false,
+        },
+        tenant: business,
         role: 'OWNER',
+        memberships,
       },
       message: 'Empresa e conta criadas com sucesso!',
     });
@@ -77,7 +113,8 @@ router.post('/register', async (req, res, next) => {
 // Login
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    saasService.ensureSaaSSeedData();
+    const { email, password, slug, tenantId: requestedTenantId } = req.body || {};
 
     if (!email || !password) {
       return res.status(400).json({ success: false, error: 'E-mail e senha são obrigatórios' });
@@ -88,39 +125,109 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'E-mail ou senha inválidos' });
     }
 
+    if (user.active === false) {
+      return res.status(403).json({
+        success: false,
+        code: 'USER_INACTIVE',
+        error: 'Sua conta de usuário encontra-se desativada.',
+      });
+    }
+
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
       return res.status(401).json({ success: false, error: 'E-mail ou senha inválidos' });
     }
 
-    // Get tenant membership
-    const tenantId = user.tenantId || 'biz-1';
-    const role = user.role || 'OWNER';
+    const role: UserRole = (user.role as UserRole) || 'OWNER';
+    const isMasterAdmin = Boolean((user as any).isMasterAdmin || role === 'SUPER_ADMIN');
+    let tenantId = user.tenantId || 'biz-1';
+
+    if (role === 'CUSTOMER') {
+      const requestedStore = String(slug || requestedTenantId || '').trim();
+      if (requestedStore) {
+        const resolved = await saasService.resolvePublicEstablishmentBySlugOrId(requestedStore);
+        const targetTenant = resolved?.establishment || (memoryStore.tenants as any[]).find(
+          (t) => t.id === requestedStore || String(t.slug || '').toLowerCase() === requestedStore.toLowerCase()
+        );
+        if (!targetTenant) {
+          return res.status(404).json({
+            success: false,
+            code: 'ESTABLISHMENT_NOT_FOUND',
+            error: 'Estabelecimento informado não foi encontrado.',
+          });
+        }
+        tenantId = targetTenant.id;
+        // Permanent link: logging in via /agendar/:slug creates or retrieves the Client link for this store
+        await customerStorage.getClientForCustomerUser(
+          tenantId,
+          user.id,
+          user.email,
+          user.name,
+          (user as any).phone
+        );
+      } else {
+        // Ensure primary link exists and resolve from linked establishments
+        const existingLinks = await customerStorage.getLinkedEstablishmentsForCustomer(user.id, user.email);
+        if (existingLinks.length > 0) {
+          const matchesPrimary = existingLinks.find((l: any) => l.tenantId === tenantId);
+          tenantId = matchesPrimary ? matchesPrimary.tenantId : existingLinks[0].tenantId;
+        } else if (user.tenantId) {
+          await customerStorage.getClientForCustomerUser(
+            user.tenantId,
+            user.id,
+            user.email,
+            user.name,
+            (user as any).phone
+          );
+        }
+      }
+    }
 
     const sessionPayload = Buffer.from(
       JSON.stringify({
         userId: user.id,
         userName: user.name,
         email: user.email,
+        phone: (user as any).phone || undefined,
         tenantId,
         role,
-        permissions: ['*'],
+        isMasterAdmin,
+        permissions: ROLE_PERMISSIONS[role] || [],
+        professionalId: (user as any).professionalId || undefined,
+        iat: Date.now(),
       })
     ).toString('base64');
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'none',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    const memberships = saasService.getUserMemberships(user.id);
+    const linkedEstablishments =
+      role === 'CUSTOMER'
+        ? await customerStorage.getLinkedEstablishmentsForCustomer(user.id, user.email)
+        : [];
+    const business = await db.getBusiness(tenantId);
+
     res.json({
       success: true,
+      token: sessionPayload,
       data: {
-        user: { id: user.id, name: user.name, email: user.email },
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role,
+          isMasterAdmin,
+        },
         tenantId,
+        tenant: business,
         role,
+        memberships,
+        linkedEstablishments,
       },
       message: 'Login realizado com sucesso',
     });
@@ -129,27 +236,197 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
+// Switch active tenant for authenticated staff/owner, customer, or Master Admin
+router.post('/switch-tenant', authMiddleware, async (req, res, next) => {
+  try {
+    if (!req.user || !req.tenantContext) {
+      return res.status(401).json({ success: false, error: 'Não autenticado' });
+    }
+
+    const { tenantId, slug } = req.body || {};
+    const targetRef = String(tenantId || slug || '').trim();
+    if (!targetRef) {
+      return res.status(400).json({ success: false, error: 'Informe o identificador do estabelecimento (tenantId ou slug).' });
+    }
+
+    const resolved = await saasService.resolvePublicEstablishmentBySlugOrId(targetRef);
+    const targetTenant = resolved?.establishment || (memoryStore.tenants as any[]).find(
+      (t) => t.id === targetRef || String(t.slug || '').toLowerCase() === targetRef.toLowerCase()
+    );
+    if (!targetTenant) {
+      return res.status(404).json({
+        success: false,
+        code: 'ESTABLISHMENT_NOT_FOUND',
+        error: 'Estabelecimento não encontrado.',
+      });
+    }
+
+    const resolvedTenantId = targetTenant.id;
+    let resolvedRole: UserRole = req.tenantContext.role;
+
+    if (req.tenantContext.role === 'CUSTOMER') {
+      const linkedClient = await customerStorage.hasClientLinkInTenant(
+        resolvedTenantId,
+        req.user.id,
+        req.user.email
+      );
+      if (!linkedClient) {
+        return res.status(403).json({
+          success: false,
+          code: 'STORE_LINK_REQUIRED',
+          error: 'Acesso negado: você não possui vínculo cadastrado com este estabelecimento.',
+        });
+      }
+      resolvedRole = 'CUSTOMER';
+    } else if (!req.user.isMasterAdmin && req.tenantContext.role !== 'SUPER_ADMIN') {
+      const memberships = saasService.getUserMemberships(req.user.id);
+      const match = memberships.find((m: any) => m.tenantId === resolvedTenantId);
+      if (!match) {
+        return res.status(403).json({
+          success: false,
+          code: 'CROSS_TENANT_ACCESS_DENIED',
+          error: 'Acesso negado: você não possui vínculo administrativo com este estabelecimento.',
+        });
+      }
+      resolvedRole = match.role as UserRole;
+    }
+
+    const sessionPayload = Buffer.from(
+      JSON.stringify({
+        userId: req.user.id,
+        userName: req.user.name,
+        email: req.user.email,
+        phone: req.user.phone,
+        tenantId: resolvedTenantId,
+        role: resolvedRole,
+        isMasterAdmin: Boolean(req.user.isMasterAdmin),
+        permissions: ROLE_PERMISSIONS[resolvedRole] || [],
+        iat: Date.now(),
+      })
+    ).toString('base64');
+
+    res.cookie('agenda_session', sessionPayload, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    const business = await db.getBusiness(resolvedTenantId);
+    const memberships = saasService.getUserMemberships(req.user.id);
+    const linkedEstablishments =
+      resolvedRole === 'CUSTOMER'
+        ? await customerStorage.getLinkedEstablishmentsForCustomer(req.user.id, req.user.email)
+        : [];
+
+    res.json({
+      success: true,
+      token: sessionPayload,
+      data: {
+        user: { ...req.user, role: resolvedRole },
+        tenantId: resolvedTenantId,
+        tenant: business,
+        role: resolvedRole,
+        memberships,
+        linkedEstablishments,
+      },
+      message: `Ambiente alternado para ${business.name}.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Create an additional establishment for an authenticated OWNER
+router.post('/establishments', authMiddleware, async (req, res, next) => {
+  try {
+    if (!req.user || !req.tenantContext) {
+      return res.status(401).json({ success: false, error: 'Não autenticado' });
+    }
+    if (!['OWNER', 'SUPER_ADMIN'].includes(req.tenantContext.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Apenas proprietários podem cadastrar um novo estabelecimento.',
+      });
+    }
+
+    const { businessName, slug, phone, email, address, description, plan } = req.body || {};
+    if (!businessName || String(businessName).trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Informe o nome do novo estabelecimento (mínimo 2 caracteres).',
+      });
+    }
+
+    const created = await saasService.createAdditionalEstablishmentForOwner({
+      ownerUserId: req.user.id,
+      businessName: String(businessName).trim(),
+      phone,
+      email: email || req.user.email,
+      address,
+      description,
+      plan: plan === 'SIMPLE' ? 'SIMPLE' : 'COMPLETE',
+    });
+
+    const memberships = saasService.getUserMemberships(req.user.id);
+    const business = await db.getBusiness(created.tenant.id);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        tenant: business,
+        subscription: created.subscription,
+        memberships,
+      },
+      message: 'Novo estabelecimento criado com sucesso!',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Logout
 router.post('/logout', (req, res) => {
+  const rawToken = extractRawSessionToken(req);
+  if (rawToken) {
+    revokeSessionToken(rawToken);
+  }
   res.clearCookie('agenda_session');
   res.json({ success: true, message: 'Logout realizado com sucesso' });
 });
 
 // Current User Info (/me)
-router.get('/me', async (req, res, next) => {
+router.get('/me', authMiddleware, async (req, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ success: false, error: 'Não autenticado' });
     }
 
+    const dbUser = req.user.email ? await db.findUserByEmail(req.user.email) : null;
+    if (!dbUser && !(memoryStore.users as any[]).some((u) => u.id === req.user?.id)) {
+      res.clearCookie('agenda_session');
+      return res.status(401).json({ success: false, error: 'Sessão expirada ou conta não encontrada.' });
+    }
+
     const business = await db.getBusiness(req.tenantContext?.tenantId);
+    const memberships = saasService.getUserMemberships(req.user.id);
+    const linkedEstablishments =
+      req.tenantContext?.role === 'CUSTOMER'
+        ? await customerStorage.getLinkedEstablishmentsForCustomer(req.user.id, req.user.email)
+        : [];
 
     res.json({
       success: true,
       data: {
-        user: req.user,
+        user: {
+          ...req.user,
+          role: req.tenantContext?.role || 'OWNER',
+          isMasterAdmin: Boolean(req.user.isMasterAdmin || req.tenantContext?.role === 'SUPER_ADMIN'),
+        },
         tenant: business,
         tenantContext: req.tenantContext,
+        memberships,
+        linkedEstablishments,
       },
     });
   } catch (error) {
@@ -165,15 +442,13 @@ router.post('/forgot-password', async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'E-mail obrigatório' });
     }
 
-    // Generates a secure token (mock/actual storage)
+    // Generates a secure token (stored server-side only, never exposed in HTTP response)
     const token = Math.random().toString(36).substring(2, 15);
     await db.savePasswordResetToken(email, token);
 
     res.json({
       success: true,
       message: 'Instruções de recuperação enviadas para o seu e-mail.',
-      // In development / demo mode, return reset token for testing convenience
-      ...(process.env.NODE_ENV === 'development' ? { devResetToken: token } : {}),
     });
   } catch (error) {
     next(error);

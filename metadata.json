@@ -1,6 +1,6 @@
 {
   "name": "Agenda Beauty",
-  "description": "SaaS profissional de agendamento e gestão para manicures e nail designers.",
+  "description": "Agende horários online em segundos com confirmação imediata via Pix. Plataforma completa de gestão e agendamento para estúdios de beleza e manicures.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
