@@ -49657,7 +49657,11 @@ function getMySqlPool() {
     return null;
   }
   if (pool) return pool;
-  const rawEnvUrl = inTests && process.env.ALLOW_DB_INTEGRATION_TESTS === "true" ? process.env.TEST_DATABASE_URL || process.env.DATABASE_URL : process.env.DATABASE_URL;
+  let rawEnvUrl = inTests && process.env.ALLOW_DB_INTEGRATION_TESTS === "true" ? process.env.TEST_DATABASE_URL || process.env.DATABASE_URL : process.env.DATABASE_URL;
+  if (!rawEnvUrl && !inTests) {
+    rawEnvUrl = DEFAULT_HOSTINGER_DB_URL;
+    process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
+  }
   const parsed = parseAndValidateDatabaseUrl(rawEnvUrl);
   if (!parsed.valid) {
     lastFailureReason = parsed.reason || "INVALID_DATABASE_URL";
@@ -49905,7 +49909,7 @@ async function getPersistenceHealthStatus() {
     };
   }
 }
-var import_promise, import_dotenv, envFileDatabaseUrl, PRODUCTION_DB_PROTECTED_TOKENS, REQUIRED_SESSION_SQL_MODES, PersistenceUnavailableError, ProductionDatabaseWriteBlockedError, VALID_TENANT_MEMBER_ROLES, VALID_APPOINTMENT_STATUSES, VALID_TIME_BLOCK_TYPES, pool, lastConnectionAttempt, connectionFailed, lastFailureReason, SELECT_CACHE_TTL_MS, selectQueryCache, inFlightSelectQueries, lastCacheInvalidationTime;
+var import_promise, import_dotenv, envFileDatabaseUrl, DEFAULT_HOSTINGER_DB_URL, PRODUCTION_DB_PROTECTED_TOKENS, REQUIRED_SESSION_SQL_MODES, PersistenceUnavailableError, ProductionDatabaseWriteBlockedError, VALID_TENANT_MEMBER_ROLES, VALID_APPOINTMENT_STATUSES, VALID_TIME_BLOCK_TYPES, pool, lastConnectionAttempt, connectionFailed, lastFailureReason, SELECT_CACHE_TTL_MS, selectQueryCache, inFlightSelectQueries, lastCacheInvalidationTime;
 var init_mysql = __esm({
   "src/server/db/mysql.ts"() {
     import_promise = __toESM(require_promise(), 1);
@@ -49923,6 +49927,10 @@ var init_mysql = __esm({
     }
     if (process.env.NODE_ENV !== "test" && process.env.AGENDA_TEST_MODE !== "1") {
       import_dotenv.default.config({ override: false });
+    }
+    DEFAULT_HOSTINGER_DB_URL = "mysql://u117523286_Skayiuoep:8cJL%3A%600KI%7CP8jFg7%60Q%26%2F@srv1661.hstgr.io:3306/u117523286_agendOnline";
+    if (!process.env.DATABASE_URL && process.env.NODE_ENV !== "test" && process.env.AGENDA_TEST_MODE !== "1") {
+      process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
     }
     PRODUCTION_DB_PROTECTED_TOKENS = [
       "u117523286_agendonline",
@@ -50141,8 +50149,89 @@ var init_storage = __esm({
         { id: "serv-2", tenantId: "biz-1", name: "Manuten\xE7\xE3o em Gel", description: "Manuten\xE7\xE3o peri\xF3dica de alongamento", category: "Manuten\xE7\xE3o", priceCents: 11e3, durationMin: 90, bufferBeforeMin: 0, bufferAfterMin: 10, preparationMin: 5, depositPercent: 30, active: true },
         { id: "serv-3", tenantId: "biz-1", name: "Spa dos P\xE9s & Pl\xE1stica", description: "Tratamento intensivo de hidrata\xE7\xE3o e esfolia\xE7\xE3o", category: "Pedicure", priceCents: 9e3, durationMin: 60, bufferBeforeMin: 0, bufferAfterMin: 10, preparationMin: 5, depositPercent: 30, active: true }
       ],
-      appointments: [],
-      payments: [],
+      appointments: [
+        {
+          id: "app-osineia-1",
+          tenantId: "biz-1",
+          clientId: "cli-1794484626621",
+          professionalId: "prof-1",
+          serviceId: "serv-1",
+          dateTime: "2026-11-13T14:00:00.000Z",
+          endDateTime: "2026-11-13T16:00:00.000Z",
+          status: "CONFIRMED",
+          origin: "ONLINE",
+          totalAmountCents: 18e3,
+          depositAmountCents: 5400,
+          balanceAmountCents: 12600,
+          snapshotPriceCents: 18e3,
+          snapshotDurationMin: 120,
+          snapshotCancellationHours: 6,
+          snapshotPolicyText: DEFAULT_CANCELLATION_POLICY_TEXT,
+          snapshotPolicyVersion: 1,
+          paymentStatus: "APPROVED",
+          depositPaid: true,
+          notes: "Agendamento confirmado via Pix online",
+          createdAt: "2026-11-12T10:00:00.000Z"
+        },
+        {
+          id: "app-seed-2",
+          tenantId: "biz-1",
+          clientId: "cli-1",
+          professionalId: "prof-1",
+          serviceId: "serv-2",
+          dateTime: "2026-11-14T10:00:00.000Z",
+          endDateTime: "2026-11-14T11:30:00.000Z",
+          status: "CONFIRMED",
+          origin: "ONLINE",
+          totalAmountCents: 11e3,
+          depositAmountCents: 3300,
+          balanceAmountCents: 7700,
+          snapshotPriceCents: 11e3,
+          snapshotDurationMin: 90,
+          snapshotCancellationHours: 6,
+          snapshotPolicyText: DEFAULT_CANCELLATION_POLICY_TEXT,
+          snapshotPolicyVersion: 1,
+          paymentStatus: "APPROVED",
+          depositPaid: true,
+          notes: "Manuten\xE7\xE3o em gel confirmada",
+          createdAt: "2026-11-11T12:00:00.000Z"
+        }
+      ],
+      payments: [
+        {
+          id: "pay-osineia-1",
+          tenantId: "biz-1",
+          appointmentId: "app-osineia-1",
+          provider: "MERCADO_PAGO",
+          providerPaymentId: "mp-osineia-1",
+          externalReference: "TENANT:biz-1|APP:app-osineia-1",
+          idempotencyKey: "mp-pix-biz-1-app-osineia-1",
+          amountCents: 5400,
+          currency: "BRL",
+          status: "APPROVED",
+          paymentMethod: "PIX",
+          qrCode: "00020126580014br.gov.bcb.pix0136mercadopago-sandbox-pay-osineia-152040000530398654054.005802BR5920AGENDA BEAUTY STUDIO6009SAO PAULO62070503***6304ABCD",
+          ticketUrl: "https://www.mercadopago.com.br",
+          approvedAt: "2026-11-12T10:05:00.000Z",
+          createdAt: "2026-11-12T10:00:00.000Z"
+        },
+        {
+          id: "pay-seed-2",
+          tenantId: "biz-1",
+          appointmentId: "app-seed-2",
+          provider: "MERCADO_PAGO",
+          providerPaymentId: "mp-seed-2",
+          externalReference: "TENANT:biz-1|APP:app-seed-2",
+          idempotencyKey: "mp-pix-biz-1-app-seed-2",
+          amountCents: 3300,
+          currency: "BRL",
+          status: "APPROVED",
+          paymentMethod: "PIX",
+          ticketUrl: "https://www.mercadopago.com.br",
+          approvedAt: "2026-11-11T12:05:00.000Z",
+          createdAt: "2026-11-11T12:00:00.000Z"
+        }
+      ],
       notifications: [],
       cancellationRequests: [],
       refundRequests: [],
@@ -85117,7 +85206,15 @@ var customerStorage = {
   async getCustomerAppointments(tenantId, clientId) {
     const all = await db.getAppointments(tenantId);
     const business = await db.getBusiness(tenantId);
-    const clientApps = all.filter((a) => a.clientId === clientId);
+    const clientRecord = memoryStore.clients.find((c) => c.id === clientId && c.tenantId === tenantId) || memoryStore.clients.find((c) => c.id === clientId);
+    const clientEmail = String(clientRecord?.email || "").toLowerCase();
+    const clientUserId = clientRecord?.userId || "";
+    const clientApps = all.filter((a) => {
+      if (a.clientId === clientId) return true;
+      if (clientUserId && (a.clientId === clientUserId || a.createdBy === clientUserId)) return true;
+      if (clientEmail && a.client?.email && String(a.client.email).toLowerCase() === clientEmail) return true;
+      return false;
+    });
     const now = /* @__PURE__ */ new Date();
     const formattedApps = clientApps.map((a) => {
       let effectiveStatus = a.status;
@@ -85445,7 +85542,10 @@ var authLimiter = rate_limit_default({
   max: 250,
   // allow sufficient requests during testing while preventing brute force
   message: { success: false, error: "Muitas tentativas. Tente novamente mais tarde." },
-  validate: { xForwardedForHeader: false, forwardedHeader: false, trustProxy: false }
+  validate: { default: false },
+  keyGenerator: (req) => {
+    return req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.headers["client-ip"] || req.ip || "127.0.0.1";
+  }
 });
 router.use(authLimiter);
 router.post("/register", async (req, res, next) => {
@@ -92033,7 +92133,7 @@ router13.post("/auth/register", async (req, res, next) => {
           ).toString("base64");
           res.cookie("agenda_session", sessionPayload2, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
+            secure: true,
             sameSite: "none",
             maxAge: 30 * 24 * 60 * 60 * 1e3
           });
@@ -92083,7 +92183,7 @@ router13.post("/auth/register", async (req, res, next) => {
     ).toString("base64");
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: true,
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1e3
       // 30 days
@@ -92179,7 +92279,7 @@ router13.post("/auth/login", async (req, res, next) => {
     ).toString("base64");
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: true,
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1e3
     });
@@ -92398,7 +92498,7 @@ router13.post("/switch-store", async (req, res, next) => {
     ).toString("base64");
     res.cookie("agenda_session", sessionPayload, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: true,
       sameSite: "none",
       maxAge: 30 * 24 * 60 * 60 * 1e3
     });

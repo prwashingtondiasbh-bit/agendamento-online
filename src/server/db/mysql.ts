@@ -19,6 +19,13 @@ if (process.env.NODE_ENV !== 'test' && process.env.AGENDA_TEST_MODE !== '1') {
   dotenv.config({ override: false });
 }
 
+export const DEFAULT_HOSTINGER_DB_URL =
+  'mysql://u117523286_Skayiuoep:8cJL%3A%600KI%7CP8jFg7%60Q%26%2F@srv1661.hstgr.io:3306/u117523286_agendOnline';
+
+if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'test' && process.env.AGENDA_TEST_MODE !== '1') {
+  process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
+}
+
 export const PRODUCTION_DB_PROTECTED_TOKENS = [
   'u117523286_agendonline',
   'srv1661.hstgr.io',
@@ -410,9 +417,14 @@ export function getMySqlPool(): mysql.Pool | null {
 
   if (pool) return pool;
 
-  const rawEnvUrl = inTests && process.env.ALLOW_DB_INTEGRATION_TESTS === 'true'
+  let rawEnvUrl = inTests && process.env.ALLOW_DB_INTEGRATION_TESTS === 'true'
     ? (process.env.TEST_DATABASE_URL || process.env.DATABASE_URL)
     : process.env.DATABASE_URL;
+
+  if (!rawEnvUrl && !inTests) {
+    rawEnvUrl = DEFAULT_HOSTINGER_DB_URL;
+    process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
+  }
 
   const parsed = parseAndValidateDatabaseUrl(rawEnvUrl);
   if (!parsed.valid) {

@@ -14,12 +14,19 @@ import {
 
 const router = Router();
 
-// Rate limiting on auth routes (prevent brute force)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 250, // allow sufficient requests during testing while preventing brute force
   message: { success: false, error: 'Muitas tentativas. Tente novamente mais tarde.' },
-  validate: { xForwardedForHeader: false, forwardedHeader: false, trustProxy: false },
+  validate: { default: false },
+  keyGenerator: (req) => {
+    return (
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      (req.headers['client-ip'] as string) ||
+      req.ip ||
+      '127.0.0.1'
+    );
+  },
 });
 
 router.use(authLimiter);

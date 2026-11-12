@@ -265,7 +265,7 @@ router.post('/auth/register', async (req, res, next) => {
 
           res.cookie('agenda_session', sessionPayload, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
+            secure: true,
             sameSite: 'none',
             maxAge: 30 * 24 * 60 * 60 * 1000,
           });
@@ -321,7 +321,7 @@ router.post('/auth/register', async (req, res, next) => {
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'none',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
@@ -427,7 +427,7 @@ router.post('/auth/login', async (req, res, next) => {
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'none',
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });
@@ -700,7 +700,7 @@ router.post('/switch-store', async (req: any, res, next) => {
 
     res.cookie('agenda_session', sessionPayload, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'none',
       maxAge: 30 * 24 * 60 * 60 * 1000,
     });

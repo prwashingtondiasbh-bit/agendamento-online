@@ -12,6 +12,9 @@ if (!process.env.DATABASE_URL) {
 const app = createApp();
 const serverlessHandler = serverless(app);
 
+let lastSyncTime = 0;
+const SYNC_INTERVAL_MS = 60000;
+
 export const handler = async (event: any, context: any) => {
   if (context) {
     context.callbackWaitsForEmptyEventLoop = false;
@@ -21,10 +24,14 @@ export const handler = async (event: any, context: any) => {
     process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
   }
 
-  try {
-    await saasService.syncTenantsFromMySql();
-  } catch (e) {
-    console.warn('[Netlify Function] MySQL sync warning:', e);
+  const now = Date.now();
+  if (now - lastSyncTime > SYNC_INTERVAL_MS) {
+    try {
+      await saasService.syncTenantsFromMySql();
+      lastSyncTime = now;
+    } catch (e) {
+      console.warn('[Netlify Function] MySQL sync warning:', e);
+    }
   }
 
   // Normalize path whether invoked via /api/* rewrite or /.netlify/functions/api/*

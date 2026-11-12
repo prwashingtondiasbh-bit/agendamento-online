@@ -5,7 +5,7 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["@prisma/client", "mysql2"]
+  external_node_modules = []
 
 [[redirects]]
   from = "/api/*"
