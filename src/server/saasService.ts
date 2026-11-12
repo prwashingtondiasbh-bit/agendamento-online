@@ -1121,7 +1121,7 @@ export const saasService = {
     if (!pool) return;
 
     const now = Date.now();
-    if (now - lastFullSyncTimestamp < 4000 && lastFullSyncTimestamp >= getLastCacheInvalidationTime()) {
+    if (now - lastFullSyncTimestamp < 30000 && lastFullSyncTimestamp >= getLastCacheInvalidationTime()) {
       return;
     }
 
@@ -1142,12 +1142,16 @@ export const saasService = {
           [appRows],
         ]: any = await Promise.all([
           queryWithRetry(`SELECT * FROM Tenant ORDER BY createdAt ASC`),
-          queryWithRetry(`SELECT * FROM Subscription`).catch(() => [[]]),
-          queryWithRetry(`SELECT * FROM User`).catch(() => [[]]),
-          queryWithRetry(`SELECT * FROM Client`).catch(() => [[]]),
-          queryWithRetry(`SELECT * FROM Service`).catch(() => [[]]),
-          queryWithRetry(`SELECT * FROM Professional`).catch(() => [[]]),
-          queryWithRetry(`SELECT * FROM Appointment`).catch(() => [[]]),
+          queryWithRetry(`SELECT * FROM Subscription`).catch(() => [null]),
+          queryWithRetry(
+            `SELECT u.*, tm.tenantId as memberTenantId, tm.role as memberRole
+             FROM User u
+             LEFT JOIN TenantMember tm ON tm.userId = u.id`
+          ).catch(() => [null]),
+          queryWithRetry(`SELECT * FROM Client`).catch(() => [null]),
+          queryWithRetry(`SELECT * FROM Service`).catch(() => [null]),
+          queryWithRetry(`SELECT * FROM Professional`).catch(() => [null]),
+          queryWithRetry(`SELECT * FROM Appointment`).catch(() => [null]),
         ]);
 
         if (Array.isArray(rows) && rows.length > 0) {
@@ -1229,6 +1233,16 @@ export const saasService = {
           }
         }
 
+        if (Array.isArray(clientRows) && clientRows.length > 0) {
+          store.clients = clientRows.map((c: any) => {
+            const userIdMatch = typeof c.notes === 'string' ? c.notes.match(/userId:([^\s]+)/) : null;
+            return {
+              ...c,
+              userId: c.userId || (userIdMatch ? userIdMatch[1] : undefined),
+            };
+          });
+        }
+
         if (Array.isArray(userRows) && userRows.length > 0) {
           const masterUsers = store.users.filter(
             (u: any) =>
@@ -1236,33 +1250,100 @@ export const saasService = {
               u.role === 'SUPER_ADMIN' ||
               String(u.email || '').toLowerCase() === 'master@agendabeauty.com.br'
           );
-          const dbUsers = userRows.map((u: any) => ({
-            ...u,
-            active: u.active !== undefined ? Boolean(u.active) : true,
-            isMasterAdmin: Boolean(u.isMasterAdmin || u.role === 'SUPER_ADMIN'),
-          }));
+
+          const dedupedUsersMap = new Map<string, any>();
+          for (const u of userRows) {
+            if (!u || !u.id) continue;
+            const existingMem = store.users.find(
+              (mu: any) =>
+                mu.id === u.id ||
+                String(mu.email || '').toLowerCase() === String(u.email || '').toLowerCase()
+            );
+            const emailLower = String(u.email || '').toLowerCase();
+            const isMaster = Boolean(
+              u.isMasterAdmin ||
+                u.role === 'SUPER_ADMIN' ||
+                u.memberRole === 'SUPER_ADMIN' ||
+                existingMem?.isMasterAdmin ||
+                emailLower === 'master@agendabeauty.com.br'
+            );
+            const isInClients = (store.clients || []).some(
+              (c: any) =>
+                c.userId === u.id ||
+                (emailLower && String(c.email || '').toLowerCase() === emailLower) ||
+                String(c.notes || '').includes(`userId:${u.id}`)
+            );
+
+            let resolvedRole = u.memberRole || u.role || existingMem?.role;
+            if (isMaster) {
+              resolvedRole = 'SUPER_ADMIN';
+            } else if (!resolvedRole) {
+              if (String(u.id).startsWith('user-cust-') || isInClients) {
+                resolvedRole = 'CUSTOMER';
+              } else {
+                resolvedRole = 'OWNER';
+              }
+            }
+
+            const resolvedTenantId =
+              u.memberTenantId || u.tenantId || existingMem?.tenantId || 'biz-1';
+
+            if (u.memberTenantId && u.memberRole) {
+              const hasTm = store.tenantMembers.some(
+                (tm: any) => tm.userId === u.id && tm.tenantId === u.memberTenantId
+              );
+              if (!hasTm) {
+                store.tenantMembers.push({
+                  id: `tm-${u.id}-${u.memberTenantId}`,
+                  tenantId: u.memberTenantId,
+                  userId: u.id,
+                  role: u.memberRole,
+                });
+              }
+            }
+
+            if (!dedupedUsersMap.has(u.id)) {
+              const { memberTenantId, memberRole, ...cleanUser } = u;
+              dedupedUsersMap.set(u.id, {
+                ...(existingMem || {}),
+                ...cleanUser,
+                tenantId: resolvedTenantId,
+                role: resolvedRole,
+                active: u.active !== undefined ? Boolean(u.active) : true,
+                isMasterAdmin: isMaster,
+              });
+            }
+          }
+
+          const dbUsers = Array.from(dedupedUsersMap.values());
           for (const mu of masterUsers) {
-            if (!dbUsers.some((du: any) => String(du.email || '').toLowerCase() === String(mu.email || '').toLowerCase())) {
+            if (
+              !dbUsers.some(
+                (du: any) =>
+                  String(du.email || '').toLowerCase() === String(mu.email || '').toLowerCase()
+              )
+            ) {
               dbUsers.push(mu);
             }
           }
           store.users = dbUsers;
         }
 
-        if (Array.isArray(clientRows)) store.clients = clientRows;
-        if (Array.isArray(serviceRows)) {
+        if (Array.isArray(serviceRows) && serviceRows.length > 0) {
           store.services = serviceRows.map((s: any) => ({
             ...s,
             active: s.active !== undefined ? Boolean(s.active) : true,
           }));
         }
-        if (Array.isArray(profRows)) {
+        if (Array.isArray(profRows) && profRows.length > 0) {
           store.professionals = profRows.map((p: any) => ({
             ...p,
             active: p.active !== undefined ? Boolean(p.active) : true,
           }));
         }
-        if (Array.isArray(appRows)) store.appointments = appRows;
+        if (Array.isArray(appRows) && appRows.length > 0) {
+          store.appointments = appRows;
+        }
 
         lastFullSyncTimestamp = Date.now();
       } catch (e) {

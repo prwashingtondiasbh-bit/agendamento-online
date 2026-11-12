@@ -255,7 +255,7 @@ function isTransientConnectionError(err: any): boolean {
   );
 }
 
-const SELECT_CACHE_TTL_MS = 4000;
+const SELECT_CACHE_TTL_MS = 30000;
 const selectQueryCache = new Map<string, { expiresAt: number; rows: any }>();
 const inFlightSelectQueries = new Map<string, Promise<any>>();
 let lastCacheInvalidationTime = 0;
@@ -274,13 +274,13 @@ function createNewPool(dbUrl: string): mysql.Pool {
   const newPool = mysql.createPool({
     uri: dbUrl,
     waitForConnections: true,
-    connectionLimit: 10,
-    maxIdle: 6,
-    idleTimeout: 60000, // keep connections warm for 60s to avoid TCP handshake latency
+    connectionLimit: 1,
+    maxIdle: 1,
+    idleTimeout: 3600000, // keep single connection open for 1 hour to prevent Hostinger max_connections_per_hour exhaustion
     queueLimit: 0,
     enableKeepAlive: true,
-    keepAliveInitialDelay: 3000,
-    connectTimeout: 5000,
+    keepAliveInitialDelay: 10000,
+    connectTimeout: 8000,
   });
 
   // Intercept pool.execute so any direct write invalidates the SELECT cache immediately
@@ -359,7 +359,9 @@ export function handleDbFallbackError(operation: string, err: any): void {
     throw err;
   }
 
-  if (isTransientConnectionError(err)) {
+  if (err?.code === 'ER_USER_LIMIT_REACHED' || String(err?.message || '').includes('max_connections_per_hour')) {
+    markConnectionFailed('ER_USER_LIMIT_REACHED');
+  } else if (isTransientConnectionError(err)) {
     resetPool();
   }
 
@@ -396,7 +398,8 @@ export function getMySqlPool(): mysql.Pool | null {
     }
   }
 
-  if (connectionFailed && Date.now() - lastConnectionAttempt < 15000) {
+  const cooldownMs = lastFailureReason === 'ER_USER_LIMIT_REACHED' ? 60000 : 15000;
+  if (connectionFailed && Date.now() - lastConnectionAttempt < cooldownMs) {
     if (strict) {
       throw new PersistenceUnavailableError(
         `Conexão MySQL marcada como indisponível (${lastFailureReason || 'CONNECTION_FAILED'}).`

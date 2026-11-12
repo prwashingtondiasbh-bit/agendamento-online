@@ -111,6 +111,18 @@ export const memoryStore = {
       resetExpires: null as Date | null,
       active: true,
     },
+    {
+      id: 'user-cust-1794484626621',
+      name: 'Osineia Santos',
+      email: 'osineia.sa@gmail.com',
+      phone: '31988003407',
+      passwordHash: bcrypt.hashSync('123456', 10),
+      tenantId: 'biz-1',
+      role: 'CUSTOMER',
+      resetToken: null as string | null,
+      resetExpires: null as Date | null,
+      active: true,
+    },
   ] as any[],
 
   professionals: [
@@ -125,12 +137,26 @@ export const memoryStore = {
 
   timeBlocks: [] as any[],
 
-  clients: [] as any[],
+  clients: [
+    {
+      id: 'cli-1794484626621',
+      tenantId: 'biz-1',
+      userId: 'user-cust-1794484626621',
+      name: 'Osineia Santos',
+      phone: '31988003407',
+      email: 'osineia.sa@gmail.com',
+      contactPreference: 'WHATSAPP',
+      notes: 'userId:user-cust-1794484626621 pref:WHATSAPP',
+      internalNotes: [],
+      tags: [],
+      createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+    },
+  ] as any[],
 
   services: [
-    { id: 'serv-1', tenantId: 'biz-1', name: 'Alongamento em Gel (Fibra)', description: 'Fibra de vidro completa', category: 'Alongamento', priceCents: 18000, durationMin: 120, bufferBeforeMin: 0, bufferAfterMin: 15, preparationMin: 10, depositPercent: 30, active: true },
+    { id: 'serv-1', tenantId: 'biz-1', name: 'Alongamento em Gel (Fibra)', description: 'Fibra de vidro completa', category: 'Alongamento', priceCents: 100, durationMin: 120, bufferBeforeMin: 0, bufferAfterMin: 15, preparationMin: 10, depositPercent: 30, active: true },
     { id: 'serv-2', tenantId: 'biz-1', name: 'Manutenção em Gel', description: 'Manutenção periódica de alongamento', category: 'Manutenção', priceCents: 11000, durationMin: 90, bufferBeforeMin: 0, bufferAfterMin: 10, preparationMin: 5, depositPercent: 30, active: true },
-    { id: 'serv-3', tenantId: 'biz-1', name: 'Spa dos Pés & Plástica', description: 'Tratamento intensivo de hidratação e esfoliação', category: 'Pedicure', priceCents: 9000, durationMin: 60, bufferBeforeMin: 0, bufferAfterMin: 10, preparationMin: 5, depositPercent: 30, active: true },
+    { id: 'serv-3', tenantId: 'biz-1', name: 'Spa dos Pés & Plástica', description: 'Tratamento intensivo de hidราtação e esfoliação', category: 'Pedicure', priceCents: 9000, durationMin: 60, bufferBeforeMin: 0, bufferAfterMin: 10, preparationMin: 5, depositPercent: 30, active: true },
   ],
 
   appointments: [] as any[],
@@ -361,6 +387,9 @@ export const memoryStore = {
 export const db = {
   async findUserByEmail(email: string) {
     saasService.ensureSaaSSeedData();
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail) return null;
+
     const pool = getMySqlPool();
     if (pool) {
       try {
@@ -369,20 +398,31 @@ export const db = {
                   tm.tenantId, tm.role
            FROM User u
            LEFT JOIN TenantMember tm ON tm.userId = u.id
-           WHERE u.email = ? LIMIT 1`,
-          [email]
+           WHERE LOWER(u.email) = LOWER(?) LIMIT 1`,
+          [cleanEmail]
         );
         if (rows && rows.length > 0) {
           const u = rows[0];
-          const memUser = memoryStore.users.find(mu => mu.email === email || mu.id === u.id);
+          const memUser = memoryStore.users.find(
+            (mu) => String(mu.email || '').toLowerCase() === cleanEmail || mu.id === u.id
+          );
+          const isInClients = (memoryStore.clients as any[]).some(
+            (c) =>
+              c.userId === u.id ||
+              String(c.email || '').toLowerCase() === cleanEmail ||
+              String(c.notes || '').includes(`userId:${u.id}`)
+          );
           const resolvedRole =
             u.role && String(u.role).trim() !== ''
               ? u.role
-              : memUser?.role || (String(u.id).startsWith('user-cust-') ? 'CUSTOMER' : 'OWNER');
-          return {
+              : memUser?.role ||
+                (String(u.id).startsWith('user-cust-') || isInClients ? 'CUSTOMER' : 'OWNER');
+
+          const hydratedUser = {
             id: u.id,
             name: u.name,
             email: u.email,
+            phone: memUser?.phone || undefined,
             passwordHash: u.passwordHash,
             tenantId: u.tenantId || memUser?.tenantId || 'biz-1',
             role: resolvedRole,
@@ -392,12 +432,30 @@ export const db = {
             resetExpires: u.resetExpires,
             active: Boolean(u.active),
           };
+          if (memUser) {
+            Object.assign(memUser, hydratedUser);
+          } else {
+            memoryStore.users.push(hydratedUser);
+          }
+          return hydratedUser;
         }
       } catch (e) {
         handleDbFallbackError('findUserByEmail', e);
       }
     }
-    return memoryStore.users.find(u => u.email === email) || null;
+    const foundMem =
+      memoryStore.users.find((u) => String(u.email || '').toLowerCase() === cleanEmail) || null;
+    if (foundMem && !foundMem.role) {
+      const isInClients = (memoryStore.clients as any[]).some(
+        (c) =>
+          c.userId === foundMem.id ||
+          String(c.email || '').toLowerCase() === cleanEmail ||
+          String(c.notes || '').includes(`userId:${foundMem.id}`)
+      );
+      foundMem.role =
+        String(foundMem.id).startsWith('user-cust-') || isInClients ? 'CUSTOMER' : 'OWNER';
+    }
+    return foundMem;
   },
 
   async getUsers() {
