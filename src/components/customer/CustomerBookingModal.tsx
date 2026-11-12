@@ -139,6 +139,7 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
     if (!date || !professionalId) return false;
     if (serverOccupiedTimes.includes(slotTime)) return true;
     const slotStart = new Date(`${date}T${slotTime}:00-03:00`).getTime();
+    if (slotStart <= Date.now()) return true;
     const serviceDurationMin = Number(selectedService?.durationMin || 60);
     const slotEnd = slotStart + serviceDurationMin * 60000;
 

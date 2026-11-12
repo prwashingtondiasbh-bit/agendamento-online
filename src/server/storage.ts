@@ -2281,6 +2281,9 @@ export const db = {
       Number(service.bufferAfterMin || 0);
 
     const now = new Date();
+    const nowSp = this.getSaoPauloHourMinute(now);
+    const isToday = params.date === nowSp.dateStr;
+
     const allApps = await this.getAppointments(tenantId);
     const activeApps = allApps.filter((a: any) => {
       if (a.tenantId !== tenantId || a.professionalId !== params.professionalId) return false;
@@ -2328,13 +2331,22 @@ export const db = {
         reason = 'FORA_DO_EXPEDIENTE';
       }
 
-      // Check break window if workingHours configured for this day
+      // Check if slot is in the past for today
+      if (available && isToday && requestedStart.getTime() <= now.getTime()) {
+        available = false;
+        reason = 'HORARIO_PASSADO';
+      }
+
+      // Check break window (lunch break) with default fallback 12:00 to 13:00 for Mon-Sat (days 1-6)
       if (available) {
         const spInfo = this.getSaoPauloHourMinute(requestedStart);
         const whForDay = profWh.find((w: any) => Number(w.dayOfWeek) === spInfo.dayOfWeek);
-        if (whForDay && whForDay.breakStart && whForDay.breakEnd) {
-          const [bsH, bsM] = String(whForDay.breakStart).split(':').map(Number);
-          const [beH, beM] = String(whForDay.breakEnd).split(':').map(Number);
+        const breakStartStr = whForDay?.breakStart ?? (spInfo.dayOfWeek !== 0 ? '12:00' : null);
+        const breakEndStr = whForDay?.breakEnd ?? (spInfo.dayOfWeek !== 0 ? '13:00' : null);
+
+        if (breakStartStr && breakEndStr) {
+          const [bsH, bsM] = String(breakStartStr).split(':').map(Number);
+          const [beH, beM] = String(breakEndStr).split(':').map(Number);
           const breakStartMs = new Date(`${params.date}T${String(bsH).padStart(2, '0')}:${String(bsM || 0).padStart(2, '0')}:00-03:00`).getTime();
           const breakEndMs = new Date(`${params.date}T${String(beH).padStart(2, '0')}:${String(beM || 0).padStart(2, '0')}:00-03:00`).getTime();
           if (effectiveStart.getTime() < breakEndMs && effectiveEnd.getTime() > breakStartMs) {

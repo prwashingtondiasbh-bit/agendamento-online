@@ -52010,11 +52010,15 @@ var init_storage = __esm({
           err.statusCode = 400;
           throw err;
         }
-        const [openH] = openTime.split(":").map(Number);
-        const [closeH] = closeTime.split(":").map(Number);
+        const [openH, openM = 0] = openTime.split(":").map(Number);
+        const [closeH, closeM = 0] = closeTime.split(":").map(Number);
+        const closeTotalMin = closeH * 60 + closeM;
+        const startTotalMin = openH * 60 + openM;
         const prepMin = Number(service.preparationMin || 0);
         const totalDurationMin = Number(service.durationMin || 60) + Number(service.bufferBeforeMin || 0) + Number(service.bufferAfterMin || 0);
         const now = /* @__PURE__ */ new Date();
+        const nowSp = this.getSaoPauloHourMinute(now);
+        const isToday = params.date === nowSp.dateStr;
         const allApps = await this.getAppointments(tenantId);
         const activeApps = allApps.filter((a) => {
           if (a.tenantId !== tenantId || a.professionalId !== params.professionalId) return false;
@@ -52030,25 +52034,39 @@ var init_storage = __esm({
         );
         const profWh = memoryStore.workingHours.filter((wh) => wh.professionalId === params.professionalId);
         const slots = [];
-        for (let h = openH; h < closeH; h++) {
-          const hh = String(h).padStart(2, "0");
-          const timeLabel = `${hh}:00`;
+        for (let currentMin = startTotalMin; currentMin < closeTotalMin; currentMin += 30) {
+          const slotH = Math.floor(currentMin / 60);
+          const slotM = currentMin % 60;
+          const timeLabel = `${String(slotH).padStart(2, "0")}:${String(slotM).padStart(2, "0")}`;
           const requestedStart = /* @__PURE__ */ new Date(`${params.date}T${timeLabel}:00-03:00`);
           if (isNaN(requestedStart.getTime())) continue;
           const effectiveStart = new Date(requestedStart.getTime() + prepMin * 6e4);
           const effectiveEnd = new Date(effectiveStart.getTime() + totalDurationMin * 6e4);
+          const effectiveEndTotalMin = slotH * 60 + slotM + prepMin + totalDurationMin;
           let available = true;
           let reason = null;
-          const spInfo = this.getSaoPauloHourMinute(requestedStart);
-          const whForDay = profWh.find((w) => Number(w.dayOfWeek) === spInfo.dayOfWeek);
-          if (whForDay && whForDay.breakStart && whForDay.breakEnd) {
-            const [bsH, bsM] = String(whForDay.breakStart).split(":").map(Number);
-            const [beH, beM] = String(whForDay.breakEnd).split(":").map(Number);
-            const breakStartMs = (/* @__PURE__ */ new Date(`${params.date}T${String(bsH).padStart(2, "0")}:${String(bsM || 0).padStart(2, "0")}:00-03:00`)).getTime();
-            const breakEndMs = (/* @__PURE__ */ new Date(`${params.date}T${String(beH).padStart(2, "0")}:${String(beM || 0).padStart(2, "0")}:00-03:00`)).getTime();
-            if (effectiveStart.getTime() < breakEndMs && effectiveEnd.getTime() > breakStartMs) {
-              available = false;
-              reason = "INTERVALO_PROFISSIONAL";
+          if (effectiveEndTotalMin > closeTotalMin) {
+            available = false;
+            reason = "FORA_DO_EXPEDIENTE";
+          }
+          if (available && isToday && requestedStart.getTime() <= now.getTime()) {
+            available = false;
+            reason = "HORARIO_PASSADO";
+          }
+          if (available) {
+            const spInfo = this.getSaoPauloHourMinute(requestedStart);
+            const whForDay = profWh.find((w) => Number(w.dayOfWeek) === spInfo.dayOfWeek);
+            const breakStartStr = whForDay?.breakStart ?? (spInfo.dayOfWeek !== 0 ? "12:00" : null);
+            const breakEndStr = whForDay?.breakEnd ?? (spInfo.dayOfWeek !== 0 ? "13:00" : null);
+            if (breakStartStr && breakEndStr) {
+              const [bsH, bsM] = String(breakStartStr).split(":").map(Number);
+              const [beH, beM] = String(breakEndStr).split(":").map(Number);
+              const breakStartMs = (/* @__PURE__ */ new Date(`${params.date}T${String(bsH).padStart(2, "0")}:${String(bsM || 0).padStart(2, "0")}:00-03:00`)).getTime();
+              const breakEndMs = (/* @__PURE__ */ new Date(`${params.date}T${String(beH).padStart(2, "0")}:${String(beM || 0).padStart(2, "0")}:00-03:00`)).getTime();
+              if (effectiveStart.getTime() < breakEndMs && effectiveEnd.getTime() > breakStartMs) {
+                available = false;
+                reason = "INTERVALO_PROFISSIONAL";
+              }
             }
           }
           if (available) {
@@ -52192,6 +52210,23 @@ var init_storage = __esm({
           blockErr.statusCode = 409;
           blockErr.suggestedSlots = suggestedSlots;
           throw blockErr;
+        }
+        const dateStr = startDateTime.toISOString().split("T")[0];
+        const spInfo = this.getSaoPauloHourMinute(startDateTime);
+        const profWh = memoryStore.workingHours.filter((wh) => wh.professionalId === data.professionalId);
+        const whForDay = profWh.find((w) => Number(w.dayOfWeek) === spInfo.dayOfWeek);
+        if (whForDay && whForDay.breakStart && whForDay.breakEnd) {
+          const [bsH, bsM] = String(whForDay.breakStart).split(":").map(Number);
+          const [beH, beM] = String(whForDay.breakEnd).split(":").map(Number);
+          const breakStartMs = (/* @__PURE__ */ new Date(`${dateStr}T${String(bsH).padStart(2, "0")}:${String(bsM || 0).padStart(2, "0")}:00-03:00`)).getTime();
+          const breakEndMs = (/* @__PURE__ */ new Date(`${dateStr}T${String(beH).padStart(2, "0")}:${String(beM || 0).padStart(2, "0")}:00-03:00`)).getTime();
+          if (startDateTime.getTime() < breakEndMs && endDateTime.getTime() > breakStartMs) {
+            const suggestedSlots = await this.getSuggestedSlots(tenantId, data.professionalId, data.serviceId, startDateTime);
+            const breakErr = new Error("Hor\xE1rio indispon\xEDvel: o atendimento coincide com o hor\xE1rio de almo\xE7o/intervalo da profissional.");
+            breakErr.statusCode = 409;
+            breakErr.suggestedSlots = suggestedSlots;
+            throw breakErr;
+          }
         }
         const officialServicePriceCents = Number(service.priceCents || Math.round(Number(service.price || 0) * 100));
         const priceCents = data._serverCalculatedPriceCents !== void 0 && Number.isFinite(Number(data._serverCalculatedPriceCents)) ? Math.max(0, Math.round(Number(data._serverCalculatedPriceCents))) : officialServicePriceCents;
@@ -52449,6 +52484,21 @@ var init_storage = __esm({
           const err = new Error("Hor\xE1rio indispon\xEDvel: existe um bloqueio de agenda neste per\xEDodo para a profissional selecionada.");
           err.statusCode = 409;
           throw err;
+        }
+        const dateStrU = targetStart.toISOString().split("T")[0];
+        const spInfoU = this.getSaoPauloHourMinute(targetStart);
+        const profWhU = memoryStore.workingHours.filter((wh) => wh.professionalId === targetProfessionalId);
+        const whForDayU = profWhU.find((w) => Number(w.dayOfWeek) === spInfoU.dayOfWeek);
+        if (whForDayU && whForDayU.breakStart && whForDayU.breakEnd) {
+          const [bsH, bsM] = String(whForDayU.breakStart).split(":").map(Number);
+          const [beH, beM] = String(whForDayU.breakEnd).split(":").map(Number);
+          const breakStartMs = (/* @__PURE__ */ new Date(`${dateStrU}T${String(bsH).padStart(2, "0")}:${String(bsM || 0).padStart(2, "0")}:00-03:00`)).getTime();
+          const breakEndMs = (/* @__PURE__ */ new Date(`${dateStrU}T${String(beH).padStart(2, "0")}:${String(beM || 0).padStart(2, "0")}:00-03:00`)).getTime();
+          if (targetStart.getTime() < breakEndMs && targetEnd.getTime() > breakStartMs) {
+            const err = new Error("Hor\xE1rio indispon\xEDvel: o atendimento coincide com o hor\xE1rio de almo\xE7o/intervalo da profissional.");
+            err.statusCode = 409;
+            throw err;
+          }
         }
         const allApps = await this.getAppointments(tenantId);
         const conflict = allApps.find((a) => {
