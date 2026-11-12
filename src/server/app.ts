@@ -66,11 +66,15 @@ export function createApp() {
         if (allowedOrigins.length === 0 || allowedOrigins.includes(cleanOrigin)) {
           return callback(null, true);
         }
-        // Automatically allow same-host origin on Hostinger custom domains
         try {
-          const originHost = new URL(cleanOrigin).host;
+          const parsedUrl = new URL(cleanOrigin);
+          const originHost = parsedUrl.host;
           const reqHost = req.headers['x-forwarded-host'] || req.headers.host;
-          if (reqHost && originHost === reqHost) {
+          if (
+            (reqHost && originHost === reqHost) ||
+            originHost.endsWith('.netlify.app') ||
+            originHost.endsWith('.run.app')
+          ) {
             return callback(null, true);
           }
         } catch {}

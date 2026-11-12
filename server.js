@@ -95905,9 +95905,10 @@ function createApp() {
           return callback(null, true);
         }
         try {
-          const originHost = new URL(cleanOrigin).host;
+          const parsedUrl = new URL(cleanOrigin);
+          const originHost = parsedUrl.host;
           const reqHost = req.headers["x-forwarded-host"] || req.headers.host;
-          if (reqHost && originHost === reqHost) {
+          if (reqHost && originHost === reqHost || originHost.endsWith(".netlify.app") || originHost.endsWith(".run.app")) {
             return callback(null, true);
           }
         } catch {
