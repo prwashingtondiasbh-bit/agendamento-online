@@ -1151,7 +1151,10 @@ export class CancellationService {
       if (app.id === appointmentId) return false;
       if (app.professionalId !== appointment.professionalId) return false;
       if (!['PENDING_PAYMENT', 'CONFIRMED', 'PENDING'].includes(app.status)) return false;
-      if (app.status === 'PENDING_PAYMENT' && app.expiresAt && new Date(app.expiresAt) < evaluationTime) return false;
+      if (app.status === 'PENDING_PAYMENT') {
+        if (app.expiresAt && new Date(app.expiresAt) < evaluationTime) return false;
+        if (!app.expiresAt && app.createdAt && (evaluationTime.getTime() - new Date(app.createdAt).getTime() > 10 * 60000)) return false;
+      }
       const start = new Date(app.dateTime).getTime();
       const end = new Date(app.endDateTime).getTime();
       return parsedNewStart.getTime() < end && parsedNewEnd.getTime() > start;

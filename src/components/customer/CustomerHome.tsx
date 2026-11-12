@@ -30,6 +30,7 @@ interface CustomerHomeProps {
   onOpenPix: (appointment: any) => void;
   onSelectAppointment: (appointment: any) => void;
   onContinuePayment?: (appointment: any) => void;
+  onCancelPending?: (appointment: any) => void;
 }
 
 export const CustomerHome: React.FC<CustomerHomeProps> = ({
@@ -44,6 +45,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
   onOpenPix,
   onSelectAppointment,
   onContinuePayment,
+  onCancelPending,
 }) => {
   const firstName = customer?.name ? customer.name.split(' ')[0] : 'Cliente';
   const allApps = appointments?.all || [];
@@ -249,6 +251,14 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
               </div>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5 pt-1">
+                {onCancelPending && (
+                  <button
+                    onClick={() => onCancelPending(pendingApp)}
+                    className="px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition-colors"
+                  >
+                    Desistir / Liberar horário
+                  </button>
+                )}
                 <button
                   onClick={() => onSelectAppointment(pendingApp)}
                   className="px-4 py-2.5 rounded-xl bg-white hover:bg-stone-100 text-stone-800 border border-amber-300 text-xs font-semibold transition-colors"

@@ -1269,11 +1269,16 @@ export const db = {
   async checkProfessionalFutureConflicts(tenantId: string, professionalId: string, newActive?: boolean, newWorkingHours?: any[]) {
     const now = new Date();
     const allApps = await this.getAppointments(tenantId);
-    const futureApps = allApps.filter((a: any) =>
-      a.professionalId === professionalId &&
-      ['PENDING_PAYMENT', 'PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(a.status) &&
-      new Date(a.dateTime) > now
-    );
+    const futureApps = allApps.filter((a: any) => {
+      if (a.professionalId !== professionalId) return false;
+      if (!['PENDING_PAYMENT', 'PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(a.status)) return false;
+      if (new Date(a.dateTime) <= now) return false;
+      if (a.status === 'PENDING_PAYMENT') {
+        if (a.expiresAt && new Date(a.expiresAt) < now) return false;
+        if (!a.expiresAt && a.createdAt && (now.getTime() - new Date(a.createdAt).getTime() > 10 * 60000)) return false;
+      }
+      return true;
+    });
 
     if (newActive === false && futureApps.length > 0) {
       return futureApps;
@@ -1505,6 +1510,11 @@ export const db = {
     const appointments = await this.getAppointments(tenantId);
     const overlappingAppointments = appointments.filter((app: any) => {
       if (!['PENDING_PAYMENT', 'PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(app.status)) return false;
+      if (app.status === 'PENDING_PAYMENT') {
+        const now = new Date();
+        if (app.expiresAt && new Date(app.expiresAt) < now) return false;
+        if (!app.expiresAt && app.createdAt && (now.getTime() - new Date(app.createdAt).getTime() > 10 * 60000)) return false;
+      }
       if (data.professionalId && app.professionalId !== data.professionalId) return false;
       const appStart = new Date(app.dateTime).getTime();
       const appEnd = new Date(app.endDateTime || new Date(appStart + 60 * 60000)).getTime();
@@ -2133,7 +2143,7 @@ export const db = {
     if (pool) {
       try {
         await executeWithRetry(
-          `UPDATE Appointment SET status = 'EXPIRED' WHERE tenantId = ? AND status = 'PENDING_PAYMENT' AND expiresAt < NOW()`,
+          `UPDATE Appointment SET status = 'EXPIRED' WHERE tenantId = ? AND status = 'PENDING_PAYMENT' AND (expiresAt < NOW() OR (expiresAt IS NULL AND createdAt < DATE_SUB(NOW(), INTERVAL 10 MINUTE)))`,
           [tenantId]
         );
 
@@ -2268,10 +2278,16 @@ export const db = {
       Number(service.bufferAfterMin || 0);
 
     const now = new Date();
-    const activeApps = memoryStore.appointments.filter((a: any) => {
+    const allApps = await this.getAppointments(tenantId);
+    const activeApps = allApps.filter((a: any) => {
       if (a.tenantId !== tenantId || a.professionalId !== params.professionalId) return false;
+      // Liberate schedule: Cancelled, Expired, or No-Show appointments never block the schedule
       if (!['PENDING_PAYMENT', 'PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(a.status)) return false;
-      if (a.status === 'PENDING_PAYMENT' && a.expiresAt && new Date(a.expiresAt) < now) return false;
+      // Pending deposits that expired or timed out (>10 min) liberate the schedule
+      if (a.status === 'PENDING_PAYMENT') {
+        if (a.expiresAt && new Date(a.expiresAt) < now) return false;
+        if (!a.expiresAt && a.createdAt && (now.getTime() - new Date(a.createdAt).getTime() > 10 * 60000)) return false;
+      }
       return true;
     });
 
@@ -2367,11 +2383,18 @@ export const db = {
     const suggestions: string[] = [];
     const baseTime = requestedDateTime.getTime();
     const offsetsMinutes = [30, 60, -60, 90, 120, 150, 180, 240];
-    const allApps = memoryStore.appointments.filter(
-      (a: any) =>
-        a.tenantId === tenantId &&
-        a.professionalId === professionalId &&
-        ['PENDING_PAYMENT', 'PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(a.status)
+    const rawApps = await this.getAppointments(tenantId);
+    const now = new Date();
+    const allApps = rawApps.filter(
+      (a: any) => {
+        if (a.tenantId !== tenantId || a.professionalId !== professionalId) return false;
+        if (!['PENDING_PAYMENT', 'PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(a.status)) return false;
+        if (a.status === 'PENDING_PAYMENT') {
+          if (a.expiresAt && new Date(a.expiresAt) < now) return false;
+          if (!a.expiresAt && a.createdAt && (now.getTime() - new Date(a.createdAt).getTime() > 10 * 60000)) return false;
+        }
+        return true;
+      }
     );
     const blocks = memoryStore.timeBlocks.filter(
       (tb: any) => tb.tenantId === tenantId && (!tb.professionalId || tb.professionalId === professionalId)
@@ -2531,7 +2554,7 @@ export const db = {
 
         // Expire outdated pending appointments
         await conn.execute(
-          `UPDATE Appointment SET status = 'EXPIRED' WHERE tenantId = ? AND status = 'PENDING_PAYMENT' AND expiresAt < NOW()`,
+          `UPDATE Appointment SET status = 'EXPIRED' WHERE tenantId = ? AND status = 'PENDING_PAYMENT' AND (expiresAt < NOW() OR (expiresAt IS NULL AND createdAt < DATE_SUB(NOW(), INTERVAL 10 MINUTE)))`,
           [tenantId]
         );
 
@@ -2593,7 +2616,10 @@ export const db = {
     const overlapping = memoryStore.appointments.find((app: any) => {
       if (app.professionalId !== data.professionalId) return false;
       if (!['PENDING_PAYMENT', 'CONFIRMED', 'PENDING', 'IN_PROGRESS'].includes(app.status)) return false;
-      if (app.status === 'PENDING_PAYMENT' && app.expiresAt && new Date(app.expiresAt) < now) return false;
+      if (app.status === 'PENDING_PAYMENT') {
+        if (app.expiresAt && new Date(app.expiresAt) < now) return false;
+        if (!app.expiresAt && app.createdAt && (now.getTime() - new Date(app.createdAt).getTime() > 10 * 60000)) return false;
+      }
       const appStart = new Date(app.dateTime).getTime();
       const appEnd = new Date(app.endDateTime).getTime();
       return startDateTime.getTime() < appEnd && endDateTime.getTime() > appStart;
@@ -2761,6 +2787,11 @@ export const db = {
       if (a.id === id) return false;
       if (a.professionalId !== targetProfessionalId) return false;
       if (!['PENDING_PAYMENT', 'PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(a.status)) return false;
+      if (a.status === 'PENDING_PAYMENT') {
+        const now = new Date();
+        if (a.expiresAt && new Date(a.expiresAt) < now) return false;
+        if (!a.expiresAt && a.createdAt && (now.getTime() - new Date(a.createdAt).getTime() > 10 * 60000)) return false;
+      }
       const aStart = new Date(a.dateTime).getTime();
       const aEnd = new Date(a.endDateTime || new Date(aStart + 60 * 60000)).getTime();
       return targetStart.getTime() < aEnd && targetEnd.getTime() > aStart;

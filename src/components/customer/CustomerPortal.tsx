@@ -557,6 +557,39 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     [navigateTabWithSlug]
   );
 
+  const handleCancelPending = useCallback(
+    async (app: any) => {
+      if (!app?.id) return;
+      if (!confirm('Deseja realmente cancelar este pré-agendamento e liberar o horário na agenda?')) return;
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('agenda_token') : null;
+        const headers = new Headers({ 'Content-Type': 'application/json' });
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+          headers.set('x-session-token', token);
+        }
+        const res = await fetch(`/api/v1/customer/appointments/${app.id}/cancel-pending`, {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.success) {
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem(`agenda_cust_portal_${effectiveSlug}`);
+          }
+          lastFetchTimeRef.current = 0;
+          await fetchCustomerData();
+        } else {
+          alert(data.error || 'Não foi possível cancelar o pré-agendamento.');
+        }
+      } catch {
+        alert('Erro de conexão ao cancelar.');
+      }
+    },
+    [effectiveSlug, fetchCustomerData]
+  );
+
   const unreadNotificationsCount = notifications.filter(n => !n.read).length;
   const nextAppointment = appointments.upcoming[0] || null;
   const hasMultipleStores = linkedEstablishments.length >= 2;
@@ -978,6 +1011,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             onOpenPix={(app) => setPixAppointment(app)}
             onSelectAppointment={(app) => navigateTabWithSlug('appointments', app)}
             onContinuePayment={handleContinuePayment}
+            onCancelPending={handleCancelPending}
           />
         )}
 

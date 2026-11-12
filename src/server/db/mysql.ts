@@ -22,7 +22,7 @@ if (process.env.NODE_ENV !== 'test' && process.env.AGENDA_TEST_MODE !== '1') {
 export const DEFAULT_HOSTINGER_DB_URL =
   'mysql://u117523286_Skayiuoep:8cJL%3A%600KI%7CP8jFg7%60Q%26%2F@srv1661.hstgr.io:3306/u117523286_agendOnline';
 
-if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'test' && process.env.AGENDA_TEST_MODE !== '1') {
+if (process.env.DATABASE_URL === undefined && process.env.NODE_ENV !== 'test' && process.env.AGENDA_TEST_MODE !== '1') {
   process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
 }
 
@@ -421,7 +421,7 @@ export function getMySqlPool(): mysql.Pool | null {
     ? (process.env.TEST_DATABASE_URL || process.env.DATABASE_URL)
     : process.env.DATABASE_URL;
 
-  if (!rawEnvUrl && !inTests) {
+  if (rawEnvUrl === undefined && !inTests && !strict) {
     rawEnvUrl = DEFAULT_HOSTINGER_DB_URL;
     process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
   }

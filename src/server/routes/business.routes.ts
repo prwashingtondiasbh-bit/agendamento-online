@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import { getMySqlPool } from '../db/mysql.js';
 import { db, memoryStore } from '../storage.js';
 import { businessSchema, cancellationPolicySchema } from '../validation/schemas.js';
 import { cancellationService } from '../cancellationService.js';
@@ -74,29 +75,62 @@ router.put('/cancellation-policy', requireRole(['OWNER', 'MANAGER']), async (req
 router.get('/team-members', requireRole(['OWNER', 'MANAGER']), async (req, res, next) => {
   try {
     const tenantId = req.tenantContext?.tenantId || 'biz-1';
-    const members = memoryStore.users
-      .filter(
-        (u: any) =>
-          u.tenantId === tenantId &&
-          u.role !== 'CUSTOMER' &&
-          u.role !== 'SUPER_ADMIN' &&
-          !u.isMasterAdmin &&
-          String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br'
-      )
-      .map((u: any) => {
-        const prof = u.professionalId
-          ? memoryStore.professionals.find((p: any) => p.id === u.professionalId)
-          : null;
-        return {
-          id: u.id,
-          name: u.name,
-          email: u.email,
-          role: u.role,
-          professionalId: u.professionalId || null,
-          professionalName: prof?.name || null,
-          active: u.active !== false,
-        };
-      });
+    const pool = getMySqlPool();
+    let members: any[] = [];
+
+    if (pool) {
+      try {
+        const [rows]: any = await pool.query(
+          `SELECT u.id, u.name, u.email, tm.role, u.active, p.id as professionalId, p.name as professionalName
+           FROM TenantMember tm
+           JOIN User u ON u.id = tm.userId
+           LEFT JOIN Professional p ON p.email = u.email AND p.tenantId = tm.tenantId
+           WHERE tm.tenantId = ? AND tm.role != 'SUPER_ADMIN' AND u.email != 'master@agendabeauty.com.br'
+           ORDER BY u.name ASC`,
+          [tenantId]
+        );
+        if (rows && rows.length > 0) {
+          members = rows.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            email: r.email,
+            role: r.role,
+            professionalId: r.professionalId || null,
+            professionalName: r.professionalName || null,
+            active: Boolean(r.active),
+          }));
+        }
+      } catch (mysqlErr) {
+        console.warn('[MySQL Team Members GET Warning]:', mysqlErr);
+      }
+    }
+
+    if (members.length === 0) {
+      members = memoryStore.users
+        .filter(
+          (u: any) =>
+            u.tenantId === tenantId &&
+            u.role !== 'CUSTOMER' &&
+            u.role !== 'SUPER_ADMIN' &&
+            !u.isMasterAdmin &&
+            String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br'
+        )
+        .map((u: any) => {
+          const prof = u.professionalId
+            ? memoryStore.professionals.find((p: any) => p.id === u.professionalId)
+            : null;
+          return {
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            role: u.role,
+            professionalId: u.professionalId || null,
+            professionalName: prof?.name || null,
+            active: u.active !== false,
+          };
+        });
+    }
+
     res.json({ success: true, data: members });
   } catch (error) {
     next(error);
@@ -124,6 +158,75 @@ router.post('/team-members', requireRole(['OWNER', 'MANAGER']), async (req, res,
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
+    const userId = `user-team-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const passwordHash = bcrypt.hashSync(String(password), 10);
+
+    const pool = getMySqlPool();
+    if (pool) {
+      try {
+        // Check if user already exists
+        const [existingUsers]: any = await pool.query(`SELECT id FROM User WHERE email = ?`, [normalizedEmail]);
+        let targetUserId = userId;
+        if (existingUsers && existingUsers.length > 0) {
+          targetUserId = existingUsers[0].id;
+        } else {
+          await pool.query(
+            `INSERT INTO User (id, name, email, passwordHash, active, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, NOW(), NOW())`,
+            [userId, String(name).trim(), normalizedEmail, passwordHash]
+          );
+        }
+
+        // Check if TenantMember already exists
+        const [existingMember]: any = await pool.query(
+          `SELECT id FROM TenantMember WHERE tenantId = ? AND userId = ?`,
+          [tenantId, targetUserId]
+        );
+        if (existingMember && existingMember.length > 0) {
+          return res.status(409).json({ success: false, error: 'Este usuário já faz parte da equipe deste estabelecimento.' });
+        }
+
+        const memberId = `tm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        await pool.query(
+          `INSERT INTO TenantMember (id, tenantId, userId, role, createdAt, updatedAt) VALUES (?, ?, ?, ?, NOW(), NOW())`,
+          [memberId, tenantId, targetUserId, role]
+        );
+
+        let linkedProfId = professionalId || undefined;
+        if (role === 'PROFESSIONAL' && !linkedProfId) {
+          const createdProf = await db.createProfessional(tenantId, {
+            name: String(name).trim(),
+            email: normalizedEmail,
+            phone: phone || '',
+            specialty: specialty || 'Especialista Beauty',
+            active: true,
+          });
+          linkedProfId = createdProf.id;
+        }
+
+        await db.recordAuditLog(tenantId, req.user?.id || null, 'TEAM_MEMBER_CREATED', {
+          memberId: targetUserId,
+          email: normalizedEmail,
+          role,
+          professionalId: linkedProfId,
+        });
+
+        return res.status(201).json({
+          success: true,
+          data: {
+            id: targetUserId,
+            name: String(name).trim(),
+            email: normalizedEmail,
+            role,
+            professionalId: linkedProfId || null,
+            active: true,
+          },
+          message: 'Membro da equipe cadastrado com sucesso!',
+        });
+      } catch (mysqlErr) {
+        console.warn('[MySQL Team Member Create Warning]:', mysqlErr);
+      }
+    }
+
     const existing = memoryStore.users.find(
       (u: any) => String(u.email).toLowerCase() === normalizedEmail
     );
@@ -135,7 +238,6 @@ router.post('/team-members', requireRole(['OWNER', 'MANAGER']), async (req, res,
     }
 
     let linkedProfId = professionalId || undefined;
-    // Se o perfil for PROFESSIONAL e não informou professionalId existente, cria também na agenda de profissionais
     if (role === 'PROFESSIONAL' && !linkedProfId) {
       const createdProf = await db.createProfessional(tenantId, {
         name: String(name).trim(),
@@ -148,10 +250,10 @@ router.post('/team-members', requireRole(['OWNER', 'MANAGER']), async (req, res,
     }
 
     const newUser = {
-      id: `user-team-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: userId,
       name: String(name).trim(),
       email: normalizedEmail,
-      passwordHash: bcrypt.hashSync(String(password), 10),
+      passwordHash,
       tenantId,
       role,
       professionalId: linkedProfId,
@@ -190,6 +292,37 @@ router.delete('/team-members/:id', requireRole(['OWNER']), async (req, res, next
   try {
     const tenantId = req.tenantContext?.tenantId || 'biz-1';
     const memberId = req.params.id;
+
+    if (memberId === req.user?.id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Você não pode remover sua própria conta de proprietário.',
+      });
+    }
+
+    const pool = getMySqlPool();
+    if (pool) {
+      try {
+        // Verify membership belongs to tenant
+        const [members]: any = await pool.query(
+          `SELECT tm.*, u.email FROM TenantMember tm JOIN User u ON u.id = tm.userId WHERE tm.userId = ? AND tm.tenantId = ?`,
+          [memberId, tenantId]
+        );
+        if (!members || members.length === 0) {
+          return res.status(404).json({ success: false, error: 'Usuário não encontrado nesta empresa.' });
+        }
+        const memberUser = members[0];
+        if (memberUser.email?.toLowerCase() === 'master@agendabeauty.com.br' || memberUser.role === 'SUPER_ADMIN') {
+          return res.status(403).json({ success: false, error: 'Acesso negado para remover super admin.' });
+        }
+
+        await pool.query(`DELETE FROM TenantMember WHERE userId = ? AND tenantId = ?`, [memberId, tenantId]);
+        // If user has no other tenant memberships, optionally delete user or keep user
+      } catch (mysqlErr) {
+        console.warn('[MySQL Team Member Delete Warning]:', mysqlErr);
+      }
+    }
+
     const index = memoryStore.users.findIndex(
       (u: any) =>
         u.id === memberId &&
@@ -198,16 +331,17 @@ router.delete('/team-members/:id', requireRole(['OWNER']), async (req, res, next
         !u.isMasterAdmin &&
         String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br'
     );
-    if (index === -1) {
-      return res.status(404).json({ success: false, error: 'Usuário não encontrado.' });
+    if (index !== -1) {
+      if (memoryStore.users[index].id === req.user?.id) {
+        return res.status(400).json({
+          success: false,
+          error: 'Você não pode remover sua própria conta de proprietário.',
+        });
+      }
+      memoryStore.users.splice(index, 1);
     }
-    if (memoryStore.users[index].id === req.user?.id) {
-      return res.status(400).json({
-        success: false,
-        error: 'Você não pode remover sua própria conta de proprietário.',
-      });
-    }
-    memoryStore.users.splice(index, 1);
+
+    await db.recordAuditLog(tenantId, req.user?.id || null, 'TEAM_MEMBER_DELETED', { memberId });
     res.json({ success: true, message: 'Acesso do membro removido com sucesso.' });
   } catch (error) {
     next(error);

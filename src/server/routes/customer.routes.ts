@@ -1135,6 +1135,40 @@ router.post('/appointments/:appointmentId/cancellation-requests', async (req: an
 });
 
 // -------------------------------------------------------------
+// POST /api/v1/customer/appointments/:appointmentId/cancel-pending
+// Instantly cancels an unpaid pending pre-reservation and frees the schedule
+// -------------------------------------------------------------
+router.post('/appointments/:appointmentId/cancel-pending', async (req: any, res, next) => {
+  try {
+    const appointmentId = req.params.appointmentId;
+    const ownership = await customerStorage.resolveCustomerAppointmentOwnership(
+      req.user.id,
+      req.user.email,
+      appointmentId
+    );
+    const tenantId = ownership ? ownership.tenantId : (req.activeTenantId || req.tenantContext?.tenantId || 'biz-1');
+    const existing = await db.getAppointmentById(tenantId, appointmentId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Agendamento não encontrado.' });
+    }
+    if (existing.status !== 'PENDING_PAYMENT' && existing.status !== 'PENDING') {
+      return res.status(400).json({
+        success: false,
+        error: 'Apenas pré-agendamentos pendentes de confirmação podem ser cancelados diretamente por este fluxo.',
+      });
+    }
+    const updated = await db.updateAppointmentStatus(tenantId, appointmentId, 'CANCELLED', req.user.id);
+    res.json({
+      success: true,
+      data: updated,
+      message: 'Pré-agendamento cancelado com sucesso. O horário foi liberado imediatamente na agenda do estabelecimento.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -------------------------------------------------------------
 // POST /api/v1/customer/appointments/:appointmentId/reschedule
 // -------------------------------------------------------------
 router.post('/appointments/:appointmentId/reschedule', async (req: any, res, next) => {
