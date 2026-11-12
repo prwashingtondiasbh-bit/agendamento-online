@@ -1,1 +1,4 @@
-/*    /index.html   200
+/api/*        /.netlify/functions/api/:splat  200
+/robots.txt   /.netlify/functions/api/robots.txt  200
+/sitemap.xml  /.netlify/functions/api/sitemap.xml  200
+/*            /index.html                     200

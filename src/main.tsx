@@ -2,13 +2,20 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Smart API Interceptor for Netlify / Static Hosting + Token Header Injection
+// Smart API Interceptor for Netlify Functions + Token Header Injection
 if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
   try {
     const nativeFetch = window.fetch.bind(window);
-    const configuredApiBase = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-    const fallbackCloudBackend = 'https://ais-pre-3kx5mr4gwoah5onw4gj6o5-464677955233.us-east1.run.app';
-    let activeRemoteBase: string | null = configuredApiBase || null;
+    const isNetlifyHost = window.location.hostname.endsWith('.netlify.app');
+    let useNetlifyFunctionsPath = isNetlifyHost;
+
+    const toNetlifyFunctionUrl = (apiUrl: string) => {
+      // Rewrite /api/v1/... -> /.netlify/functions/api/v1/...
+      if (apiUrl.startsWith('/api/')) {
+        return `/.netlify/functions/api${apiUrl.slice(4)}`;
+      }
+      return apiUrl;
+    };
 
     const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -29,28 +36,20 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
           credentials: init?.credentials || 'include',
         };
 
-        if (activeRemoteBase) {
-          return nativeFetch(`${activeRemoteBase}${urlStr}`, enhancedInit);
+        if (useNetlifyFunctionsPath) {
+          return nativeFetch(toNetlifyFunctionUrl(urlStr), enhancedInit);
         }
 
-        try {
-          const res = await nativeFetch(urlStr, enhancedInit);
-          const contentType = (res.headers.get('content-type') || '').toLowerCase();
+        const res = await nativeFetch(urlStr, enhancedInit);
+        const contentType = (res.headers.get('content-type') || '').toLowerCase();
 
-          // If hosted on a static-only server (e.g. Netlify Drop) where /api/* returns HTML or 404 HTML
-          if (contentType.includes('text/html') || (res.status === 404 && !contentType.includes('application/json'))) {
-            activeRemoteBase = fallbackCloudBackend;
-            return nativeFetch(`${activeRemoteBase}${urlStr}`, enhancedInit);
-          }
-
-          return res;
-        } catch (err) {
-          if (window.location.hostname.endsWith('.netlify.app')) {
-            activeRemoteBase = fallbackCloudBackend;
-            return nativeFetch(`${activeRemoteBase}${urlStr}`, enhancedInit);
-          }
-          throw err;
+        // If /api/* returned HTML (e.g. custom domain on Netlify where SPA fallback caught /api/*), route to /.netlify/functions/api/*
+        if (contentType.includes('text/html')) {
+          useNetlifyFunctionsPath = true;
+          return nativeFetch(toNetlifyFunctionUrl(urlStr), enhancedInit);
         }
+
+        return res;
       }
 
       return nativeFetch(input, init);
