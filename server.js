@@ -53480,7 +53480,7 @@ var init_saasService = __esm({
         };
       },
       async changeTenantPlan(params) {
-        this.ensureSaaSSeedData();
+        await this.syncTenantsFromMySql();
         const store = memoryStore;
         const tenant = store.tenants.find((t) => t.id === params.tenantId);
         if (!tenant) {
@@ -53556,7 +53556,7 @@ var init_saasService = __esm({
         return this.getTenantSubscription(params.tenantId);
       },
       async updateTenantContractedPrice(params) {
-        this.ensureSaaSSeedData();
+        await this.syncTenantsFromMySql();
         const store = memoryStore;
         const tenant = store.tenants.find((t) => t.id === params.tenantId);
         if (!tenant) {
@@ -53613,7 +53613,7 @@ var init_saasService = __esm({
         return this.getTenantSubscription(params.tenantId);
       },
       async updateTenantSubscriptionAndAccessStatus(params) {
-        this.ensureSaaSSeedData();
+        await this.syncTenantsFromMySql();
         const store = memoryStore;
         const tenant = store.tenants.find((t) => t.id === params.tenantId);
         if (!tenant) {
@@ -53722,7 +53722,7 @@ var init_saasService = __esm({
         };
       },
       async toggleTenantAdvancedFeatures(params) {
-        this.ensureSaaSSeedData();
+        await this.syncTenantsFromMySql();
         const store = memoryStore;
         const tenant = store.tenants.find((t) => t.id === params.tenantId);
         if (!tenant) {
@@ -53854,7 +53854,8 @@ var init_saasService = __esm({
         const store = memoryStore;
         try {
           const [rows] = await queryWithRetry(`SELECT * FROM Tenant ORDER BY createdAt ASC`);
-          if (Array.isArray(rows)) {
+          if (Array.isArray(rows) && rows.length > 0) {
+            const syncedTenants = [];
             for (const r of rows) {
               const existing = store.tenants.find((t) => t.id === r.id);
               const merged = {
@@ -53884,13 +53885,80 @@ var init_saasService = __esm({
                 cancellationPolicyVersion: Number(r.cancellationPolicyVersion ?? existing?.cancellationPolicyVersion ?? 1),
                 enableAdvancedFeatures: r.enableAdvancedFeatures !== void 0 ? Boolean(r.enableAdvancedFeatures) : Boolean(existing?.enableAdvancedFeatures)
               };
-              if (existing) {
-                Object.assign(existing, merged);
-              } else {
-                store.tenants.push(merged);
-              }
-              this.getTenantSubscription(r.id);
+              syncedTenants.push(merged);
             }
+            store.tenants = syncedTenants;
+            for (const t of store.tenants) {
+              this.getTenantSubscription(t.id);
+            }
+          }
+          try {
+            const [subRows] = await queryWithRetry(`SELECT * FROM Subscription`);
+            if (Array.isArray(subRows) && subRows.length > 0) {
+              for (const sr of subRows) {
+                const existingSub = store.subscriptions.find((s) => s.tenantId === sr.tenantId);
+                const parsedHistory = typeof sr.history === "string" ? (() => {
+                  try {
+                    return JSON.parse(sr.history);
+                  } catch {
+                    return [];
+                  }
+                })() : Array.isArray(sr.history) ? sr.history : [];
+                if (existingSub) {
+                  Object.assign(existingSub, {
+                    ...sr,
+                    plan: normalizePlanCode(sr.plan),
+                    status: normalizeSubscriptionStatus(sr.status),
+                    contractedPriceCents: Number(sr.contractedPriceCents ?? existingSub.contractedPriceCents ?? 9990),
+                    history: parsedHistory
+                  });
+                }
+              }
+            }
+          } catch {
+          }
+          try {
+            const [userRows] = await queryWithRetry(`SELECT * FROM User`);
+            if (Array.isArray(userRows) && userRows.length > 0) {
+              const masterUsers = store.users.filter(
+                (u) => u.isMasterAdmin || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "master@agendabeauty.com.br"
+              );
+              const dbUsers = userRows.map((u) => ({
+                ...u,
+                active: u.active !== void 0 ? Boolean(u.active) : true,
+                isMasterAdmin: Boolean(u.isMasterAdmin || u.role === "SUPER_ADMIN")
+              }));
+              for (const mu of masterUsers) {
+                if (!dbUsers.some((du) => String(du.email || "").toLowerCase() === String(mu.email || "").toLowerCase())) {
+                  dbUsers.push(mu);
+                }
+              }
+              store.users = dbUsers;
+            }
+          } catch {
+          }
+          try {
+            const [[clientRows], [serviceRows], [profRows], [appRows]] = await Promise.all([
+              queryWithRetry(`SELECT * FROM Client`),
+              queryWithRetry(`SELECT * FROM Service`),
+              queryWithRetry(`SELECT * FROM Professional`),
+              queryWithRetry(`SELECT * FROM Appointment`)
+            ]);
+            if (Array.isArray(clientRows)) store.clients = clientRows;
+            if (Array.isArray(serviceRows)) {
+              store.services = serviceRows.map((s) => ({
+                ...s,
+                active: s.active !== void 0 ? Boolean(s.active) : true
+              }));
+            }
+            if (Array.isArray(profRows)) {
+              store.professionals = profRows.map((p) => ({
+                ...p,
+                active: p.active !== void 0 ? Boolean(p.active) : true
+              }));
+            }
+            if (Array.isArray(appRows)) store.appointments = appRows;
+          } catch {
           }
         } catch (e) {
           handleDbFallbackError("syncTenantsFromMySql", e);
@@ -54389,8 +54457,8 @@ var init_saasService = __esm({
           auditHistory
         };
       },
-      listMasterAdminUsers(filters) {
-        this.ensureSaaSSeedData();
+      async listMasterAdminUsers(filters) {
+        await this.syncTenantsFromMySql();
         const store = memoryStore;
         const search = String(filters?.search || "").trim().toLowerCase();
         const roleFilter = String(filters?.role || "ALL").toUpperCase();
@@ -95964,9 +96032,13 @@ function createApp() {
 }
 
 // server.ts
+init_saasService();
 var import_dotenv2 = __toESM(require_main(), 1);
 import path2 from "path";
 import_dotenv2.default.config({ override: true });
+if (!process.env.DATABASE_URL && process.env.NODE_ENV !== "test" && process.env.AGENDA_TEST_MODE !== "1") {
+  process.env.DATABASE_URL = "mysql://u117523286_Skayiuoep:8cJL%3A%600KI%7CP8jFg7%60Q%26%2F@srv1661.hstgr.io:3306/u117523286_agendOnline";
+}
 for (const [key, val] of Object.entries(process.env)) {
   if (typeof val === "string" && (val.startsWith('"') && val.endsWith('"') || val.startsWith("'") && val.endsWith("'"))) {
     process.env[key] = val.slice(1, -1).trim();
@@ -95983,6 +96055,11 @@ async function startServer() {
   const isDev = process.env.NODE_ENV !== "production";
   if (!isDev && process.env.DB_STRICT_MODE === void 0) {
     process.env.DB_STRICT_MODE = "true";
+  }
+  try {
+    await saasService.syncTenantsFromMySql();
+  } catch (e) {
+    console.warn("[Agenda Beauty] Initial MySQL sync warning:", e);
   }
   const app = createApp();
   if (isDev) {

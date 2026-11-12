@@ -1,9 +1,15 @@
 import express from 'express';
 import { createApp } from './src/server/app.js';
+import { saasService } from './src/server/saasService.js';
 import dotenv from 'dotenv';
 import path from 'path';
 
 dotenv.config({ override: true });
+
+if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'test' && process.env.AGENDA_TEST_MODE !== '1') {
+  process.env.DATABASE_URL =
+    'mysql://u117523286_Skayiuoep:8cJL%3A%600KI%7CP8jFg7%60Q%26%2F@srv1661.hstgr.io:3306/u117523286_agendOnline';
+}
 
 // Normalize environment variables that may have been pasted with literal surrounding quotes
 for (const [key, val] of Object.entries(process.env)) {
@@ -28,6 +34,12 @@ async function startServer() {
   // In production, enforce strict MySQL persistence by default unless explicitly overridden
   if (!isDev && process.env.DB_STRICT_MODE === undefined) {
     process.env.DB_STRICT_MODE = 'true';
+  }
+
+  try {
+    await saasService.syncTenantsFromMySql();
+  } catch (e) {
+    console.warn('[Agenda Beauty] Initial MySQL sync warning:', e);
   }
 
   const app = createApp();

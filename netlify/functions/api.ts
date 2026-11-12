@@ -1,10 +1,12 @@
 import serverless from 'serverless-http';
 import { createApp } from '../../src/server/app.js';
+import { saasService } from '../../src/server/saasService.js';
 
-// Ensure Hostinger MySQL connection is available in Netlify Functions even if not manually added in Netlify UI
+const DEFAULT_HOSTINGER_DB_URL =
+  'mysql://u117523286_Skayiuoep:8cJL%3A%600KI%7CP8jFg7%60Q%26%2F@srv1661.hstgr.io:3306/u117523286_agendOnline';
+
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL =
-    'mysql://srv119798258_usalink1:Usalink%402025@193.203.166.19:3306/srv119798258_usalink1';
+  process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
 }
 
 const app = createApp();
@@ -13,6 +15,16 @@ const serverlessHandler = serverless(app);
 export const handler = async (event: any, context: any) => {
   if (context) {
     context.callbackWaitsForEmptyEventLoop = false;
+  }
+
+  if (!process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = DEFAULT_HOSTINGER_DB_URL;
+  }
+
+  try {
+    await saasService.syncTenantsFromMySql();
+  } catch (e) {
+    console.warn('[Netlify Function] MySQL sync warning:', e);
   }
 
   // Normalize path whether invoked via /api/* rewrite or /.netlify/functions/api/*

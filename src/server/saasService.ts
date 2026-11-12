@@ -666,7 +666,7 @@ export const saasService = {
     actorId: string;
     reason: string;
   }) {
-    this.ensureSaaSSeedData();
+    await this.syncTenantsFromMySql();
     const store = memoryStore as any;
     const tenant = store.tenants.find((t: any) => t.id === params.tenantId);
     if (!tenant) {
@@ -757,7 +757,7 @@ export const saasService = {
     actorId: string;
     reason: string;
   }) {
-    this.ensureSaaSSeedData();
+    await this.syncTenantsFromMySql();
     const store = memoryStore as any;
     const tenant = store.tenants.find((t: any) => t.id === params.tenantId);
     if (!tenant) {
@@ -828,7 +828,7 @@ export const saasService = {
     actorId: string;
     reason: string;
   }) {
-    this.ensureSaaSSeedData();
+    await this.syncTenantsFromMySql();
     const store = memoryStore as any;
     const tenant = store.tenants.find((t: any) => t.id === params.tenantId);
     if (!tenant) {
@@ -954,7 +954,7 @@ export const saasService = {
     actorId: string;
     reason?: string;
   }) {
-    this.ensureSaaSSeedData();
+    await this.syncTenantsFromMySql();
     const store = memoryStore as any;
     const tenant = store.tenants.find((t: any) => t.id === params.tenantId);
     if (!tenant) {
@@ -1120,7 +1120,8 @@ export const saasService = {
     const store = memoryStore as any;
     try {
       const [rows]: any = await queryWithRetry(`SELECT * FROM Tenant ORDER BY createdAt ASC`);
-      if (Array.isArray(rows)) {
+      if (Array.isArray(rows) && rows.length > 0) {
+        const syncedTenants: any[] = [];
         for (const r of rows) {
           const existing = store.tenants.find((t: any) => t.id === r.id);
           const merged = {
@@ -1163,15 +1164,92 @@ export const saasService = {
                 ? Boolean(r.enableAdvancedFeatures)
                 : Boolean(existing?.enableAdvancedFeatures),
           };
-          if (existing) {
-            Object.assign(existing, merged);
-          } else {
-            store.tenants.push(merged);
-          }
-          // Ensure subscription exists for this tenant
-          this.getTenantSubscription(r.id);
+          syncedTenants.push(merged);
+        }
+        store.tenants = syncedTenants;
+        for (const t of store.tenants) {
+          this.getTenantSubscription(t.id);
         }
       }
+
+      // Sync Subscriptions from MySQL if table exists
+      try {
+        const [subRows]: any = await queryWithRetry(`SELECT * FROM Subscription`);
+        if (Array.isArray(subRows) && subRows.length > 0) {
+          for (const sr of subRows) {
+            const existingSub = store.subscriptions.find((s: any) => s.tenantId === sr.tenantId);
+            const parsedHistory =
+              typeof sr.history === 'string'
+                ? (() => {
+                    try {
+                      return JSON.parse(sr.history);
+                    } catch {
+                      return [];
+                    }
+                  })()
+                : Array.isArray(sr.history)
+                ? sr.history
+                : [];
+            if (existingSub) {
+              Object.assign(existingSub, {
+                ...sr,
+                plan: normalizePlanCode(sr.plan),
+                status: normalizeSubscriptionStatus(sr.status),
+                contractedPriceCents: Number(sr.contractedPriceCents ?? existingSub.contractedPriceCents ?? 9990),
+                history: parsedHistory,
+              });
+            }
+          }
+        }
+      } catch {}
+
+      // Sync Users from MySQL (while preserving Master Admin account)
+      try {
+        const [userRows]: any = await queryWithRetry(`SELECT * FROM User`);
+        if (Array.isArray(userRows) && userRows.length > 0) {
+          const masterUsers = store.users.filter(
+            (u: any) =>
+              u.isMasterAdmin ||
+              u.role === 'SUPER_ADMIN' ||
+              String(u.email || '').toLowerCase() === 'master@agendabeauty.com.br'
+          );
+          const dbUsers = userRows.map((u: any) => ({
+            ...u,
+            active: u.active !== undefined ? Boolean(u.active) : true,
+            isMasterAdmin: Boolean(u.isMasterAdmin || u.role === 'SUPER_ADMIN'),
+          }));
+          for (const mu of masterUsers) {
+            if (!dbUsers.some((du: any) => String(du.email || '').toLowerCase() === String(mu.email || '').toLowerCase())) {
+              dbUsers.push(mu);
+            }
+          }
+          store.users = dbUsers;
+        }
+      } catch {}
+
+      // Sync Clients, Services, Professionals, and Appointments counts/records for Master Admin & Portal consistency
+      try {
+        const [[clientRows], [serviceRows], [profRows], [appRows]]: any = await Promise.all([
+          queryWithRetry(`SELECT * FROM Client`),
+          queryWithRetry(`SELECT * FROM Service`),
+          queryWithRetry(`SELECT * FROM Professional`),
+          queryWithRetry(`SELECT * FROM Appointment`),
+        ]);
+        if (Array.isArray(clientRows)) store.clients = clientRows;
+        if (Array.isArray(serviceRows)) {
+          store.services = serviceRows.map((s: any) => ({
+            ...s,
+            active: s.active !== undefined ? Boolean(s.active) : true,
+          }));
+        }
+        if (Array.isArray(profRows)) {
+          store.professionals = profRows.map((p: any) => ({
+            ...p,
+            active: p.active !== undefined ? Boolean(p.active) : true,
+          }));
+        }
+        if (Array.isArray(appRows)) store.appointments = appRows;
+      } catch {}
     } catch (e) {
       handleDbFallbackError('syncTenantsFromMySql', e);
     }
@@ -1789,8 +1867,8 @@ export const saasService = {
     };
   },
 
-  listMasterAdminUsers(filters?: { search?: string; role?: string }) {
-    this.ensureSaaSSeedData();
+  async listMasterAdminUsers(filters?: { search?: string; role?: string }) {
+    await this.syncTenantsFromMySql();
     const store = memoryStore as any;
     const search = String(filters?.search || '').trim().toLowerCase();
     const roleFilter = String(filters?.role || 'ALL').toUpperCase();
