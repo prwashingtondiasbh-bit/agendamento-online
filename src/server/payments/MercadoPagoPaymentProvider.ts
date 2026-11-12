@@ -43,16 +43,40 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
         ? input.expiresAt
         : tenMinMax;
 
-    const body = {
+    const payerFirstName = input.payer.firstName || 'Cliente';
+    const payerLastName = input.payer.lastName || 'AgendaBeauty';
+    const payerFullName = `${payerFirstName} ${payerLastName}`.trim();
+
+    const body: any = {
       transaction_amount: amountReais,
       description: input.description,
+      statement_descriptor: 'AGENDA BEAUTY',
       payment_method_id: 'pix',
       date_of_expiration: effectiveExpiresAt.toISOString(),
       external_reference: input.externalReference || input.appointmentId,
       payer: {
         email: input.payer.email || 'cliente@agendabeauty.com.br',
-        first_name: input.payer.firstName || 'Cliente',
-        last_name: input.payer.lastName || 'AgendaBeauty',
+        first_name: payerFirstName,
+        last_name: payerLastName,
+      },
+      additional_info: {
+        payer: {
+          first_name: payerFirstName,
+          last_name: payerLastName,
+        },
+        items: [
+          {
+            id: input.appointmentId || 'item-sinal',
+            title: input.description,
+            description: input.description,
+            quantity: 1,
+            unit_price: amountReais,
+          },
+        ],
+      },
+      metadata: {
+        ...(input.metadata || {}),
+        client_name: payerFullName,
       },
     };
 

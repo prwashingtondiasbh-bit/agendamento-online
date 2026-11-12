@@ -500,8 +500,19 @@ export const customerStorage = {
   async getCustomerAppointments(tenantId: string, clientId: string) {
     const all = await db.getAppointments(tenantId);
     const business = await db.getBusiness(tenantId);
-    // Strict multi-tenant customer isolation: only appointments where clientId matches verified customer
-    const clientApps = all.filter((a: any) => a.clientId === clientId);
+    const clientRecord =
+      (memoryStore.clients as any[]).find((c) => c.id === clientId && c.tenantId === tenantId) ||
+      (memoryStore.clients as any[]).find((c) => c.id === clientId);
+    const clientEmail = String(clientRecord?.email || '').toLowerCase();
+    const clientUserId = clientRecord?.userId || '';
+
+    // Robust customer isolation: matches by clientId, linked userId, or client email
+    const clientApps = all.filter((a: any) => {
+      if (a.clientId === clientId) return true;
+      if (clientUserId && (a.clientId === clientUserId || a.createdBy === clientUserId)) return true;
+      if (clientEmail && a.client?.email && String(a.client.email).toLowerCase() === clientEmail) return true;
+      return false;
+    });
     const now = new Date();
 
     const formattedApps = clientApps.map((a: any) => {

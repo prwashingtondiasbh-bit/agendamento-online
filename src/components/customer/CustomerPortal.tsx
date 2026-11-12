@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Sparkles,
   Calendar,
@@ -75,32 +75,46 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   onSwitchToAdmin,
   onOpenPublicBookingSlug,
 }) => {
+  const cacheKey = `agenda_cust_portal_${activeSlug || 'default'}`;
+  const initialCache = typeof window !== 'undefined' ? (() => {
+    try {
+      const saved = sessionStorage.getItem(cacheKey);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  })() : null;
+
   const [activeTab, setActiveTab] = useState<CustomerPortalTab>(activeSubRoute);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(!initialCache && !business);
   const [accessDeniedError, setAccessDeniedError] = useState<{ code: string; message: string } | null>(null);
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
   const [switchingStore, setSwitchingStore] = useState(false);
 
   // Customer specific state from server
-  const [customer, setCustomer] = useState<any>(null);
-  const [portalBusiness, setPortalBusiness] = useState<any>(business);
-  const [storeServices, setStoreServices] = useState<Service[]>(services);
-  const [storeProfessionals, setStoreProfessionals] = useState<Professional[]>(professionals);
-  const [linkedEstablishments, setLinkedEstablishments] = useState<any[]>([]);
-  const [pendingDeposits, setPendingDeposits] = useState<any[]>([]);
+  const [customer, setCustomer] = useState<any>(initialCache?.customer || null);
+  const [portalBusiness, setPortalBusiness] = useState<any>(initialCache?.business || business);
+  const [storeServices, setStoreServices] = useState<Service[]>(initialCache?.services || services);
+  const [storeProfessionals, setStoreProfessionals] = useState<Professional[]>(initialCache?.professionals || professionals);
+  const [linkedEstablishments, setLinkedEstablishments] = useState<any[]>(initialCache?.linkedEstablishments || []);
+  const [pendingDeposits, setPendingDeposits] = useState<any[]>(initialCache?.pendingDeposits || []);
   const [appointments, setAppointments] = useState<{ upcoming: any[]; past: any[]; all: any[]; pendingDeposits?: any[] }>({
-    upcoming: [],
-    past: [],
-    all: [],
-    pendingDeposits: [],
+    upcoming: initialCache?.appointments?.upcoming || [],
+    past: initialCache?.appointments?.past || [],
+    all: initialCache?.appointments?.all || [],
+    pendingDeposits: initialCache?.appointments?.pendingDeposits || [],
   });
-  const [payments, setPayments] = useState<any[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>(initialCache?.payments || []);
+  const [notifications, setNotifications] = useState<any[]>(initialCache?.notifications || []);
 
   const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
   const [pixAppointment, setPixAppointment] = useState<any>(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [bookingTenantId, setBookingTenantId] = useState<string | undefined>(undefined);
+
+  const isFetchingRef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
+  const lastFetchedSlugRef = useRef<string | null>(null);
 
   useEffect(() => {
     setActiveTab(activeSubRoute);
@@ -145,8 +159,22 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   );
 
   const fetchCustomerData = useCallback(async () => {
-    setLoading(true);
+    if (isFetchingRef.current) return;
+    const now = Date.now();
+    if (activeSlug && activeSlug === lastFetchedSlugRef.current && now - lastFetchTimeRef.current < 6000) {
+      return;
+    }
+
+    isFetchingRef.current = true;
+    lastFetchTimeRef.current = now;
+    lastFetchedSlugRef.current = activeSlug || null;
+
+    // Only show full-screen loader if we have NO business data at all
+    if (!portalBusiness && !business) {
+      setLoading(true);
+    }
     setAccessDeniedError(null);
+
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('agenda_token') : null;
       const headers = new Headers();
@@ -181,6 +209,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
           onNavigateCustomerRoute(myStores[0].slug, tabToSubPath(activeSubRoute));
         } else if (myStores.length >= 2) {
           setLoading(false);
+          isFetchingRef.current = false;
           return;
         }
       }
@@ -212,8 +241,17 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
         catalogRes.json().catch(() => ({})),
       ]);
 
+      let finalBusiness = portalBusiness || business;
+      let finalServices = storeServices;
+      let finalProfessionals = storeProfessionals;
+      let finalCustomer = customer;
+      let finalAppointments = appointments;
+      let finalPayments = payments;
+      let finalNotifications = notifications;
+
       if (catalogData?.success && catalogData?.data) {
         if (catalogData.data.business) {
+          finalBusiness = catalogData.data.business;
           setPortalBusiness(catalogData.data.business);
           const resolvedBizSlug = catalogData.data.business.slug;
           if (resolvedBizSlug && typeof window !== 'undefined') {
@@ -231,9 +269,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
           }
         }
         if (Array.isArray(catalogData.data.services)) {
+          finalServices = catalogData.data.services;
           setStoreServices(catalogData.data.services);
         }
         if (Array.isArray(catalogData.data.professionals)) {
+          finalProfessionals = catalogData.data.professionals;
           setStoreProfessionals(catalogData.data.professionals);
         }
       }
@@ -256,8 +296,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
       }
 
       if (profileData.success && profileData.data?.customer) {
+        finalCustomer = profileData.data.customer;
         setCustomer(profileData.data.customer);
         if (profileData.data?.business) {
+          finalBusiness = profileData.data.business;
           setPortalBusiness(profileData.data.business);
         }
         if (Array.isArray(profileData.data?.linkedEstablishments)) {
@@ -266,24 +308,26 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
         if (Array.isArray(profileData.data?.pendingDeposits)) {
           setPendingDeposits(profileData.data.pendingDeposits);
         }
-      } else {
-        setCustomer({
+      } else if (!customer) {
+        finalCustomer = {
           id: currentUser?.id || 'cli-me',
           name: currentUser?.name || 'Cliente',
           email: currentUser?.email || '',
           phone: currentUser?.phone || '',
           contactPreference: 'WHATSAPP',
-        });
+        };
+        setCustomer(finalCustomer);
       }
 
       if (appsData.success && appsData.data) {
         const allList = appsData.data.all || [];
-        setAppointments({
+        finalAppointments = {
           upcoming: appsData.data.upcoming || [],
           past: appsData.data.past || [],
           all: allList,
           pendingDeposits: appsData.data.pendingDeposits || [],
-        });
+        };
+        setAppointments(finalAppointments);
         if (Array.isArray(appsData.data.pendingDeposits)) {
           setPendingDeposits(appsData.data.pendingDeposits);
         }
@@ -302,18 +346,41 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
       }
 
       if (paysData.success && paysData.data) {
-        setPayments(paysData.data || []);
+        finalPayments = paysData.data || [];
+        setPayments(finalPayments);
       }
 
       if (notifsData.success && notifsData.data) {
-        setNotifications(notifsData.data || []);
+        finalNotifications = notifsData.data || [];
+        setNotifications(finalNotifications);
+      }
+
+      // Save fresh data into session cache for instant future loads
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(
+            cacheKey,
+            JSON.stringify({
+              business: finalBusiness,
+              services: finalServices,
+              professionals: finalProfessionals,
+              customer: finalCustomer,
+              appointments: finalAppointments,
+              payments: finalPayments,
+              notifications: finalNotifications,
+              linkedEstablishments: myStores,
+              timestamp: Date.now(),
+            })
+          );
+        } catch {}
       }
     } catch (err) {
       console.error('Error fetching customer portal data:', err);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
-  }, [activeSlug, isGenericRouteWithoutSlug, activeSubRoute, selectedAppointmentIdFromUrl, currentUser, business?.slug, onNavigateCustomerRoute]);
+  }, [activeSlug, isGenericRouteWithoutSlug, currentUser?.id, business?.slug]);
 
   useEffect(() => {
     fetchCustomerData();
@@ -494,7 +561,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   const nextAppointment = appointments.upcoming[0] || null;
   const hasMultipleStores = linkedEstablishments.length >= 2;
 
-  if (loading || switchingStore) {
+  if ((loading && !portalBusiness && !business) || switchingStore) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4">
         <div className="text-center space-y-3">

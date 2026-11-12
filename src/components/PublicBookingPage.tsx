@@ -335,10 +335,6 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
         );
       }
       setAuthModalOpen(false);
-
-      if (serviceId && professionalId && date && time && !occupiedSlots.includes(time)) {
-        await executeBooking(json.token);
-      }
     } catch {
       setAuthError('Erro de conexão com o servidor.');
     } finally {

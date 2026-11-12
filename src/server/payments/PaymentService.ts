@@ -108,16 +108,36 @@ export class PaymentService {
     const serviceName = appointment.service?.name || 'Serviço Beauty';
     const expiresAt = boundedExpiresAt;
 
-    const clientName = appointment.client?.name || 'Cliente';
-    const nameParts = clientName.trim().split(' ');
+    let clientName = appointment.client?.name || '';
+    let clientEmail = appointment.client?.email || '';
+    let clientPhone = appointment.client?.phone || '';
+
+    if (!clientName && appointment.clientId) {
+      try {
+        const clients = await db.getClients(tenantId);
+        const foundClient = clients.find((c: any) => c.id === appointment.clientId);
+        if (foundClient) {
+          clientName = foundClient.name || '';
+          if (!clientEmail) clientEmail = foundClient.email || '';
+          if (!clientPhone) clientPhone = foundClient.phone || '';
+        }
+      } catch {}
+    }
+
+    const cleanClientName = clientName ? clientName.trim() : 'Cliente';
+    const nameParts = cleanClientName.split(' ');
     const firstName = nameParts[0] || 'Cliente';
     const lastName = nameParts.slice(1).join(' ') || 'AgendaBeauty';
-    const clientEmail = appointment.client?.email || `cliente.${appointment.client?.id || 'anon'}@agendabeauty.com.br`;
-    const clientPhone = appointment.client?.phone || '';
+    if (!clientEmail) clientEmail = `cliente.${appointment.clientId || appointment.client?.id || 'anon'}@agendabeauty.com.br`;
+
+    // Customer name explicitly at the beginning so it appears in the bank statement (extrato bancário)
+    const pixDescription = cleanClientName !== 'Cliente'
+      ? `${cleanClientName} - Sinal ${serviceName}`.substring(0, 100)
+      : `Sinal ${serviceName}`.substring(0, 100);
 
     const providerResult = await provider.createPixPayment({
       amountCents,
-      description: `Sinal Agendamento - ${serviceName}`,
+      description: pixDescription,
       externalReference,
       idempotencyKey,
       expiresAt,
@@ -131,6 +151,7 @@ export class PaymentService {
         tenantId,
         appointmentId,
         serviceId: appointment.serviceId,
+        clientName: cleanClientName,
       },
     });
 
