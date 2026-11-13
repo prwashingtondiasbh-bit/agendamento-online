@@ -50009,7 +50009,7 @@ var init_storage = __esm({
       tenants: [
         {
           id: "biz-1",
-          name: "Agenda Beauty Studio S\xE3o Paulo",
+          name: "Nuvem Agenda Studio S\xE3o Paulo",
           slug: "agenda-beauty-sp",
           phone: "(11) 98765-4321",
           email: "sp@agendabeauty.com.br",
@@ -50299,7 +50299,7 @@ var init_storage = __esm({
         {
           id: "lprog-biz-1",
           tenantId: "biz-1",
-          name: "Clube Fidelidade Agenda Beauty",
+          name: "Clube Fidelidade Nuvem Agenda",
           active: true,
           pointsPerReal: 1,
           pointsExpirationDays: 365,
@@ -51819,6 +51819,28 @@ var init_storage = __esm({
           updatedFields: Object.keys(data)
         });
         return this.enrichClientRecord(memClient, memoryStore.appointments.filter((a) => a.tenantId === tenantId));
+      },
+      async deleteClient(tenantId, clientId, actorId) {
+        const existingClients = await this.getClients(tenantId);
+        const existing = existingClients.find((c) => c.id === clientId);
+        if (!existing) {
+          const err = new Error("Cliente n\xE3o encontrada neste estabelecimento.");
+          err.statusCode = 404;
+          throw err;
+        }
+        const pool2 = getMySqlPool();
+        if (pool2) {
+          try {
+            await pool2.execute(`DELETE FROM Client WHERE id = ? AND tenantId = ?`, [clientId, tenantId]);
+          } catch (e) {
+          }
+        }
+        const idx = memoryStore.clients.findIndex((c) => c.id === clientId && c.tenantId === tenantId);
+        if (idx >= 0) {
+          memoryStore.clients.splice(idx, 1);
+        }
+        await this.recordAuditLog(tenantId, actorId || null, "CLIENT_DELETED", { clientId, clientName: existing.name });
+        return { id: clientId, deleted: true };
       },
       async addClientInternalNote(tenantId, clientId, noteData) {
         const existingClients = await this.getClients(tenantId);
@@ -53368,11 +53390,14 @@ var init_saasService = __esm({
             t.cancellationContactInstructions = DEFAULT_CANCELLATION_CONTACT_INSTRUCTIONS;
           }
         }
-        if (!store.users.some((u) => u.email === "master@agendabeauty.com.br")) {
+        const existingMaster = store.users.find(
+          (u) => u.id === "user-master-1" || u.isMasterAdmin || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "prwashingtondiasbh@gmail.com" || String(u.email || "").toLowerCase() === "master@agendabeauty.com.br"
+        );
+        if (!existingMaster) {
           store.users.push({
             id: "user-master-1",
             name: "Master Admin SaaS",
-            email: "master@agendabeauty.com.br",
+            email: "prwashingtondiasbh@gmail.com",
             phone: "(11) 99999-0000",
             passwordHash: bcryptjs_default.hashSync("123456", 10),
             tenantId: "biz-1",
@@ -53383,6 +53408,8 @@ var init_saasService = __esm({
             resetExpires: null,
             active: true
           });
+        } else if (String(existingMaster.email || "").toLowerCase() === "master@agendabeauty.com.br") {
+          existingMaster.email = "prwashingtondiasbh@gmail.com";
         }
         const isTestMode = process.env.NODE_ENV === "test" || process.env.AGENDA_TEST_MODE === "1";
         if (isTestMode) {
@@ -53625,11 +53652,11 @@ var init_saasService = __esm({
         }
         store.tenantMembers = store.tenantMembers.filter(
           (tm) => tm.role !== "SUPER_ADMIN" && !store.users.some(
-            (u) => u.id === tm.userId && (u.isMasterAdmin || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "master@agendabeauty.com.br")
+            (u) => u.id === tm.userId && (u.isMasterAdmin || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "prwashingtondiasbh@gmail.com")
           )
         );
         for (const u of store.users) {
-          if (u.tenantId && u.role && u.role !== "CUSTOMER" && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br") {
+          if (u.tenantId && u.role && u.role !== "CUSTOMER" && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "prwashingtondiasbh@gmail.com") {
             const exists = store.tenantMembers.some(
               (tm) => tm.userId === u.id && tm.tenantId === u.tenantId
             );
@@ -54283,17 +54310,24 @@ var init_saasService = __esm({
             }
             if (Array.isArray(userRows) && userRows.length > 0) {
               const masterUsers = store.users.filter(
-                (u) => u.isMasterAdmin || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "master@agendabeauty.com.br"
+                (u) => u.isMasterAdmin || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "prwashingtondiasbh@gmail.com"
               );
               const dedupedUsersMap = /* @__PURE__ */ new Map();
               for (const u of userRows) {
                 if (!u || !u.id) continue;
+                if (u.id === "user-master-1" && String(u.email || "").toLowerCase() === "master@agendabeauty.com.br") {
+                  u.email = "prwashingtondiasbh@gmail.com";
+                  pool2.execute(
+                    `UPDATE User SET email = 'prwashingtondiasbh@gmail.com', updatedAt = NOW() WHERE id = 'user-master-1'`
+                  ).catch(() => {
+                  });
+                }
                 const existingMem = store.users.find(
                   (mu) => mu.id === u.id || String(mu.email || "").toLowerCase() === String(u.email || "").toLowerCase()
                 );
                 const emailLower = String(u.email || "").toLowerCase();
                 const isMaster = Boolean(
-                  u.isMasterAdmin || u.role === "SUPER_ADMIN" || u.memberRole === "SUPER_ADMIN" || existingMem?.isMasterAdmin || emailLower === "master@agendabeauty.com.br"
+                  u.isMasterAdmin || u.role === "SUPER_ADMIN" || u.memberRole === "SUPER_ADMIN" || existingMem?.isMasterAdmin || emailLower === "prwashingtondiasbh@gmail.com"
                 );
                 const isInClients = (store.clients || []).some(
                   (c) => c.userId === u.id || emailLower && String(c.email || "").toLowerCase() === emailLower || String(c.notes || "").includes(`userId:${u.id}`)
@@ -54406,7 +54440,7 @@ var init_saasService = __esm({
             id: t.id,
             name: t.name,
             slug: t.slug,
-            description: t.description || "Estabelecimento parceiro oficial Agenda Beauty com agendamento online r\xE1pido e seguro.",
+            description: t.description || "Estabelecimento parceiro oficial Nuvem Agenda com agendamento online r\xE1pido e seguro.",
             logoUrl: t.logoUrl || "",
             phone: t.phone || "",
             email: t.email || "",
@@ -54535,7 +54569,7 @@ var init_saasService = __esm({
         this.ensureSaaSSeedData();
         const store = memoryStore;
         const user = store.users.find((u) => u.id === userId);
-        if (user && (user.isMasterAdmin || user.role === "SUPER_ADMIN" || String(user.email || "").toLowerCase() === "master@agendabeauty.com.br")) {
+        if (user && (user.isMasterAdmin || user.role === "SUPER_ADMIN" || String(user.email || "").toLowerCase() === "prwashingtondiasbh@gmail.com")) {
           return [];
         }
         const memberships = store.tenantMembers.filter((tm) => tm.userId === userId);
@@ -54759,7 +54793,7 @@ var init_saasService = __esm({
             )
           );
           const linkedUsersCount = store.users.filter(
-            (u) => !u.isMasterAdmin && u.role !== "SUPER_ADMIN" && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br" && (u.tenantId === t.id || store.tenantMembers.some((tm) => tm.tenantId === t.id && tm.userId === u.id))
+            (u) => !u.isMasterAdmin && u.role !== "SUPER_ADMIN" && String(u.email || "").toLowerCase() !== "prwashingtondiasbh@gmail.com" && (u.tenantId === t.id || store.tenantMembers.some((tm) => tm.tenantId === t.id && tm.userId === u.id))
           ).length;
           const appointmentsCount = store.appointments.filter(
             (a) => a.tenantId === t.id
@@ -54829,7 +54863,7 @@ var init_saasService = __esm({
         if (!found) return null;
         const store = memoryStore;
         const members2 = store.users.filter(
-          (u) => !u.isMasterAdmin && u.role !== "SUPER_ADMIN" && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br" && (u.tenantId === tenantId && u.role !== "CUSTOMER" || store.tenantMembers.some((tm) => tm.tenantId === tenantId && tm.userId === u.id))
+          (u) => !u.isMasterAdmin && u.role !== "SUPER_ADMIN" && String(u.email || "").toLowerCase() !== "prwashingtondiasbh@gmail.com" && (u.tenantId === tenantId && u.role !== "CUSTOMER" || store.tenantMembers.some((tm) => tm.tenantId === tenantId && tm.userId === u.id))
         ).map((u) => {
           const tm = store.tenantMembers.find(
             (m) => m.tenantId === tenantId && m.userId === u.id
@@ -54942,7 +54976,7 @@ var init_saasService = __esm({
           }
         }
         for (const u of store.users || []) {
-          if (u.tenantId === tenantId && !u.isMasterAdmin && u.role !== "SUPER_ADMIN" && u.role !== "CUSTOMER" && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br") {
+          if (u.tenantId === tenantId && !u.isMasterAdmin && u.role !== "SUPER_ADMIN" && u.role !== "CUSTOMER" && String(u.email || "").toLowerCase() !== "prwashingtondiasbh@gmail.com") {
             candidateUserIds.add(u.id);
           }
         }
@@ -54987,7 +55021,7 @@ var init_saasService = __esm({
               const dbUser = Array.isArray(uRows) && uRows.length > 0 ? uRows[0] : null;
               const memUser = (store.users || []).find((u) => u.id === uid);
               const emailLower = String(dbUser?.email || memUser?.email || "").toLowerCase();
-              if (!dbUser || emailLower === "master@agendabeauty.com.br" || memUser?.isMasterAdmin || memUser?.role === "SUPER_ADMIN" || memUser?.role === "CUSTOMER" || String(uid).startsWith("user-cust-")) {
+              if (!dbUser || emailLower === "prwashingtondiasbh@gmail.com" || memUser?.isMasterAdmin || memUser?.role === "SUPER_ADMIN" || memUser?.role === "CUSTOMER" || String(uid).startsWith("user-cust-")) {
                 continue;
               }
               const [remTmRows] = await conn.query(
@@ -55003,7 +55037,7 @@ var init_saasService = __esm({
               const remCli = Number(remCliRows?.[0]?.cnt || 0);
               if (remCli > 0) continue;
               await conn.execute(
-                `DELETE FROM User WHERE id = ? AND LOWER(email) <> 'master@agendabeauty.com.br'`,
+                `DELETE FROM User WHERE id = ? AND LOWER(email) <> 'prwashingtondiasbh@gmail.com'`,
                 [uid]
               );
               removedOrphanedUsers.push(uid);
@@ -55083,7 +55117,7 @@ var init_saasService = __esm({
           );
         }
         store.users = (store.users || []).reduce((acc, u) => {
-          const isProtected = Boolean(u.isMasterAdmin) || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "master@agendabeauty.com.br" || u.id === params.actorId || u.id === "user-master-1";
+          const isProtected = Boolean(u.isMasterAdmin) || u.role === "SUPER_ADMIN" || String(u.email || "").toLowerCase() === "prwashingtondiasbh@gmail.com" || u.id === params.actorId || u.id === "user-master-1";
           if (isProtected) {
             if (u.tenantId === tenantId) {
               const fallbackTenant = (store.tenants || [])[0]?.id || "biz-1";
@@ -85571,6 +85605,7 @@ var DAY = 24 * HOUR;
 
 // src/server/routes/auth.routes.ts
 init_storage();
+init_mysql();
 
 // src/server/customerStorage.ts
 init_mysql();
@@ -86143,7 +86178,7 @@ var customerStorage = {
       refundRequest,
       establishment: {
         id: tenantId,
-        name: business?.name || "Agenda Beauty Studio",
+        name: business?.name || "Nuvem Agenda Studio",
         slug: business?.slug || tenantId,
         logoUrl: business?.logoUrl || "",
         phone: business?.phone || "(11) 98765-4321",
@@ -86304,7 +86339,7 @@ var customerStorage = {
       id: `notif-${Date.now()}`,
       clientId,
       tenantId,
-      title: "Boas-vindas ao Agenda Beauty",
+      title: "Boas-vindas ao Nuvem Agenda",
       message: `Ol\xE1, ${data.name}! Seu cadastro foi conclu\xEDdo com sucesso. Agora voc\xEA pode acompanhar seus agendamentos e pagamentos com praticidade.`,
       type: "WELCOME",
       read: false,
@@ -86794,6 +86829,51 @@ router.post("/reset-password", async (req, res, next) => {
       return res.status(400).json({ success: false, error: "Token inv\xE1lido ou expirado" });
     }
     res.json({ success: true, message: "Senha redefinida com sucesso!" });
+  } catch (error62) {
+    next(error62);
+  }
+});
+router.put("/change-password", authMiddleware, async (req, res, next) => {
+  try {
+    saasService.ensureSaaSSeedData();
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, error: "Informe a senha atual e a nova senha." });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ success: false, error: "A nova senha deve ter pelo menos 6 caracteres." });
+    }
+    const authUser = req.user;
+    if (!authUser?.id) {
+      return res.status(401).json({ success: false, error: "Usu\xE1rio n\xE3o autenticado." });
+    }
+    let user = authUser.email ? await db.findUserByEmail(authUser.email) : null;
+    if (!user) {
+      user = memoryStore.users.find(
+        (u) => u.id === authUser.id || authUser.email && String(u.email || "").toLowerCase() === String(authUser.email).toLowerCase()
+      ) || null;
+    }
+    if (!user) {
+      return res.status(404).json({ success: false, error: "Usu\xE1rio n\xE3o encontrado." });
+    }
+    const isValid = bcryptjs_default.compareSync(String(currentPassword), user.passwordHash);
+    if (!isValid) {
+      return res.status(400).json({ success: false, error: "A senha atual est\xE1 incorreta." });
+    }
+    const newHash = await bcryptjs_default.hash(String(newPassword), 10);
+    user.passwordHash = newHash;
+    const memUser = memoryStore.users.find((u) => u.id === user.id || u.email === user.email);
+    if (memUser) {
+      memUser.passwordHash = newHash;
+    }
+    const pool2 = getMySqlPool();
+    if (pool2) {
+      try {
+        await pool2.execute(`UPDATE User SET passwordHash = ?, updatedAt = NOW() WHERE id = ?`, [newHash, user.id]);
+      } catch (e) {
+      }
+    }
+    res.json({ success: true, message: "Senha alterada com sucesso!" });
   } catch (error62) {
     next(error62);
   }
@@ -87734,7 +87814,7 @@ router5.get("/team-members", requireRole(["OWNER", "MANAGER"]), async (req, res,
            FROM TenantMember tm
            JOIN User u ON u.id = tm.userId
            LEFT JOIN Professional p ON p.email = u.email AND p.tenantId = tm.tenantId
-           WHERE tm.tenantId = ? AND tm.role != 'SUPER_ADMIN' AND u.email != 'master@agendabeauty.com.br'
+           WHERE tm.tenantId = ? AND tm.role != 'SUPER_ADMIN' AND LOWER(u.email) != 'prwashingtondiasbh@gmail.com'
            ORDER BY u.name ASC`,
           [tenantId]
         );
@@ -87755,7 +87835,7 @@ router5.get("/team-members", requireRole(["OWNER", "MANAGER"]), async (req, res,
     }
     if (members2.length === 0) {
       members2 = memoryStore.users.filter(
-        (u) => u.tenantId === tenantId && u.role !== "CUSTOMER" && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br"
+        (u) => u.tenantId === tenantId && u.role !== "CUSTOMER" && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "prwashingtondiasbh@gmail.com"
       ).map((u) => {
         const prof = u.professionalId ? memoryStore.professionals.find((p) => p.id === u.professionalId) : null;
         return {
@@ -87927,7 +88007,7 @@ router5.delete("/team-members/:id", requireRole(["OWNER"]), async (req, res, nex
           return res.status(404).json({ success: false, error: "Usu\xE1rio n\xE3o encontrado nesta empresa." });
         }
         const memberUser = members2[0];
-        if (memberUser.email?.toLowerCase() === "master@agendabeauty.com.br" || memberUser.role === "SUPER_ADMIN") {
+        if (memberUser.email?.toLowerCase() === "prwashingtondiasbh@gmail.com" || memberUser.role === "SUPER_ADMIN") {
           return res.status(403).json({ success: false, error: "Acesso negado para remover super admin." });
         }
         await pool2.query(`DELETE FROM TenantMember WHERE userId = ? AND tenantId = ?`, [memberId, tenantId]);
@@ -87936,7 +88016,7 @@ router5.delete("/team-members/:id", requireRole(["OWNER"]), async (req, res, nex
       }
     }
     const index = memoryStore.users.findIndex(
-      (u) => u.id === memberId && u.tenantId === tenantId && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "master@agendabeauty.com.br"
+      (u) => u.id === memberId && u.tenantId === tenantId && u.role !== "SUPER_ADMIN" && !u.isMasterAdmin && String(u.email || "").toLowerCase() !== "prwashingtondiasbh@gmail.com"
     );
     if (index !== -1) {
       if (memoryStore.users[index].id === req.user?.id) {
@@ -88146,6 +88226,16 @@ router6.put("/:id/tags", requireRole(["OWNER", "MANAGER", "RECEPTIONIST"]), asyn
       data: updated,
       message: "Etiquetas da cliente atualizadas com sucesso"
     });
+  } catch (error62) {
+    next(error62);
+  }
+});
+router6.delete("/:id", requireRole(["OWNER", "MANAGER", "RECEPTIONIST"]), async (req, res, next) => {
+  try {
+    const tenantId = req.tenantContext?.tenantId || "biz-1";
+    const { id } = req.params;
+    const result = await db.deleteClient(tenantId, id, req.user?.id);
+    res.json({ success: true, ...result, message: "Cliente exclu\xEDda com sucesso" });
   } catch (error62) {
     next(error62);
   }

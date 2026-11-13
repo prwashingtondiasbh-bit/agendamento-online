@@ -51,10 +51,12 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const confirmDeleteClient = async () => {
     if (!clientToDelete) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       const res = await apiFetch(`/api/v1/clients/${clientToDelete.id}`, {
         method: 'DELETE',
@@ -69,7 +71,7 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
       fetchFilteredClients();
       if (onRefreshClients) onRefreshClients();
     } catch (err: any) {
-      alert(err.message || 'Erro ao excluir cliente.');
+      setDeleteError(err.message || 'Erro ao excluir cliente.');
     } finally {
       setDeleting(false);
     }
@@ -822,11 +824,20 @@ export const ClientsView: React.FC<ClientsViewProps> = ({
               Tem certeza que deseja excluir a cliente <strong className="text-stone-900">{clientToDelete.name}</strong>?
             </p>
 
+            {deleteError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
+                {deleteError}
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-100">
               <button
                 type="button"
                 disabled={deleting}
-                onClick={() => setClientToDelete(null)}
+                onClick={() => {
+                  setClientToDelete(null);
+                  setDeleteError(null);
+                }}
                 className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-700 hover:bg-stone-50 font-semibold text-xs"
               >
                 Cancelar

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Calendar,
@@ -15,6 +15,10 @@ import {
   MessageSquare,
   Award,
   Menu,
+  Lock,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -44,6 +48,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   onOpenMobile,
 }) => {
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordFeedback, setPasswordFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordFeedback(null);
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordFeedback({ type: 'error', message: 'Preencha todos os campos de senha.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordFeedback({ type: 'error', message: 'A nova senha e a confirmação não conferem.' });
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordFeedback({ type: 'error', message: 'A nova senha deve ter pelo menos 6 caracteres.' });
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('agenda_token') : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        headers['x-session-token'] = token;
+      }
+      const res = await fetch('/api/v1/auth/change-password', {
+        method: 'PUT',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Erro ao alterar senha.');
+      }
+      setPasswordFeedback({ type: 'success', message: 'Senha alterada com sucesso!' });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setPasswordFeedback({ type: 'error', message: err.message || 'Erro ao alterar senha.' });
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   const allMenuItems = [
     {
       id: 'dashboard',
@@ -160,7 +216,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Sparkles className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <h1 className="font-bold text-lg tracking-tight text-white truncate">Agenda Beauty</h1>
+            <h1 className="font-bold text-lg tracking-tight text-white truncate">Nuvem Agenda</h1>
             <p className="text-xs text-stone-400 truncate">{businessName}</p>
           </div>
         </div>
@@ -212,6 +268,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
       )}
+
+      {/* Change Password Button */}
+      <div className="px-4 pb-2">
+        <button
+          type="button"
+          onClick={() => {
+            setPasswordFeedback(null);
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+            if (onCloseMobile) onCloseMobile();
+            setIsPasswordModalOpen(true);
+          }}
+          className="w-full flex items-center gap-3 px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-medium text-stone-300 hover:bg-stone-800/80 hover:text-white transition-all"
+        >
+          <Lock className="w-4 h-4 shrink-0" />
+          <span>Alterar Minha Senha</span>
+        </button>
+      </div>
 
       {/* Logout Button */}
       {onLogout && (
@@ -299,6 +374,120 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
       </nav>
+
+      {/* Change Password Modal */}
+      {isPasswordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200 space-y-5 text-stone-900">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-stone-900 font-serif">Alterar Minha Senha</h3>
+                  <p className="text-xs text-stone-500">Atualize sua senha de acesso ao painel.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPasswordModalOpen(false)}
+                className="p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {passwordFeedback && (
+              <div
+                className={`p-3.5 rounded-xl text-xs font-medium border flex items-center gap-2 ${
+                  passwordFeedback.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-700'
+                }`}
+              >
+                {passwordFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{passwordFeedback.message}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+                  Senha Atual
+                </label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+                  Nova Senha
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  placeholder="Mínimo 6 caracteres"
+                  className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+                  Confirmar Nova Senha
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  placeholder="Repita a nova senha"
+                  className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-semibold"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="submit"
+                  disabled={changingPassword}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-semibold shadow-sm"
+                >
+                  {changingPassword ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Alterando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-4 h-4" />
+                      <span>Salvar Nova Senha</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 };

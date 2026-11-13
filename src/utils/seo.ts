@@ -40,7 +40,7 @@ export function updateDocumentSeo(config: StoreSeoConfig) {
   setMetaTag('property', 'og:description', description);
   setMetaTag('property', 'og:url', canonicalUrl);
   setMetaTag('property', 'og:type', 'website');
-  setMetaTag('property', 'og:site_name', config.storeName || 'Agenda Beauty');
+  setMetaTag('property', 'og:site_name', config.storeName || 'Nuvem Agenda');
   if (config.logoUrl) {
     setMetaTag('property', 'og:image', config.logoUrl);
   }

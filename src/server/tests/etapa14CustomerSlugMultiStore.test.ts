@@ -555,7 +555,7 @@ async function runEtapa14CustomerSlugMultiStoreTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         password: '123456',
       }),
     });

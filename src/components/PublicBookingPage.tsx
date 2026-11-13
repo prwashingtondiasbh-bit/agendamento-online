@@ -115,7 +115,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
         const resolvedSlug = est?.slug || slug;
         if (est?.name) {
           updateDocumentSeo({
-            title: `${est.name} – Agendar Horário Online | Agenda Beauty`,
+            title: `${est.name} – Agendar Horário Online | Nuvem Agenda`,
             description:
               est.description ||
               `Agende seu horário online em ${est.name} com rapidez, escolha de profissional e confirmação imediata.`,
@@ -430,7 +430,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
             </div>
             <div className="min-w-0">
               <h1 className="text-sm sm:text-base font-bold text-stone-900 truncate">{establishment.name}</h1>
-              <p className="text-[11px] text-stone-500 truncate">Agendamento Online Oficial · Agenda Beauty</p>
+              <p className="text-[11px] text-stone-500 truncate">Agendamento Online Oficial · Nuvem Agenda</p>
             </div>
           </div>
 

@@ -125,6 +125,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ business, onUpdateBu
     phone: '',
   });
 
+  // Change password state for lojista
+  const [lojistaCurrentPassword, setLojistaCurrentPassword] = useState('');
+  const [lojistaNewPassword, setLojistaNewPassword] = useState('');
+  const [lojistaConfirmPassword, setLojistaConfirmPassword] = useState('');
+  const [lojistaPasswordFeedback, setLojistaPasswordFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [lojistaChangingPassword, setLojistaChangingPassword] = useState(false);
+
+  const handleLojistaChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLojistaPasswordFeedback(null);
+    if (!lojistaCurrentPassword || !lojistaNewPassword || !lojistaConfirmPassword) {
+      setLojistaPasswordFeedback({ type: 'error', message: 'Preencha todos os campos de senha.' });
+      return;
+    }
+    if (lojistaNewPassword !== lojistaConfirmPassword) {
+      setLojistaPasswordFeedback({ type: 'error', message: 'A nova senha e a confirmação não conferem.' });
+      return;
+    }
+    if (lojistaNewPassword.length < 6) {
+      setLojistaPasswordFeedback({ type: 'error', message: 'A nova senha deve ter pelo menos 6 caracteres.' });
+      return;
+    }
+
+    setLojistaChangingPassword(true);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('agenda_token') : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        headers['x-session-token'] = token;
+      }
+      const res = await fetch('/api/v1/auth/change-password', {
+        method: 'PUT',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ currentPassword: lojistaCurrentPassword, newPassword: lojistaNewPassword }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Erro ao alterar senha.');
+      }
+      setLojistaPasswordFeedback({ type: 'success', message: 'Senha alterada com sucesso!' });
+      setLojistaCurrentPassword('');
+      setLojistaNewPassword('');
+      setLojistaConfirmPassword('');
+    } catch (err: any) {
+      setLojistaPasswordFeedback({ type: 'error', message: err.message || 'Erro ao alterar senha.' });
+    } finally {
+      setLojistaChangingPassword(false);
+    }
+  };
+
   const fetchTeamMembers = useCallback(async () => {
     try {
       const res = await apiFetch('/api/v1/business/team-members');
@@ -1650,6 +1702,100 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ business, onUpdateBu
           </div>
         </div>
       )}
+      {/* Change Password Card for Lojista */}
+      <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6 mt-8 max-w-4xl mx-auto">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+            <Lock className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-stone-900 font-serif">Segurança & Senha do Painel Lojista</h2>
+            <p className="text-xs text-stone-500">Altere sua senha de acesso administrativo ao estabelecimento.</p>
+          </div>
+        </div>
+
+        {lojistaPasswordFeedback && (
+          <div
+            className={`p-3.5 rounded-xl text-xs font-medium border flex items-center gap-2 ${
+              lojistaPasswordFeedback.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-700'
+            }`}
+          >
+            {lojistaPasswordFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0" />
+            )}
+            <span>{lojistaPasswordFeedback.message}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleLojistaChangePassword} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+              Senha Atual
+            </label>
+            <input
+              type="password"
+              value={lojistaCurrentPassword}
+              onChange={(e) => setLojistaCurrentPassword(e.target.value)}
+              required
+              placeholder="••••••••"
+              className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+                Nova Senha
+              </label>
+              <input
+                type="password"
+                value={lojistaNewPassword}
+                onChange={(e) => setLojistaNewPassword(e.target.value)}
+                required
+                placeholder="Mínimo 6 caracteres"
+                className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+                Confirmar Nova Senha
+              </label>
+              <input
+                type="password"
+                value={lojistaConfirmPassword}
+                onChange={(e) => setLojistaConfirmPassword(e.target.value)}
+                required
+                placeholder="Repita a nova senha"
+                className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+              />
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-stone-100 flex justify-end">
+            <button
+              type="submit"
+              disabled={lojistaChangingPassword}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98]"
+            >
+              {lojistaChangingPassword ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Alterando...</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4" />
+                  <span>Alterar Senha do Lojista</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };

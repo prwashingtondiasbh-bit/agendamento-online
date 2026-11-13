@@ -621,7 +621,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               </div>
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-wider text-rose-600">
-                  Conta Única · Agenda Beauty
+                  Conta Única · Nuvem Agenda
                 </span>
                 <h1 className="text-xl font-bold text-stone-900 font-serif">Minhas Lojas</h1>
               </div>

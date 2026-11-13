@@ -353,7 +353,7 @@ async function runEtapa13Tests() {
     const masterLoginRes = await jsonFetch('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'master@agendabeauty.com.br', password: '123456' }),
+      body: JSON.stringify({ email: 'prwashingtondiasbh@gmail.com', password: '123456' }),
     });
     assert.strictEqual(masterLoginRes.status, 200, 'Login Master Admin deve funcionar');
     const masterToken = masterLoginRes.body.token;

@@ -752,7 +752,7 @@ export const customerStorage = {
       refundRequest,
       establishment: {
         id: tenantId,
-        name: business?.name || 'Agenda Beauty Studio',
+        name: business?.name || 'Nuvem Agenda Studio',
         slug: business?.slug || tenantId,
         logoUrl: business?.logoUrl || '',
         phone: business?.phone || '(11) 98765-4321',
@@ -932,7 +932,7 @@ export const customerStorage = {
       id: `notif-${Date.now()}`,
       clientId,
       tenantId,
-      title: 'Boas-vindas ao Agenda Beauty',
+      title: 'Boas-vindas ao Nuvem Agenda',
       message: `Olá, ${data.name}! Seu cadastro foi concluído com sucesso. Agora você pode acompanhar seus agendamentos e pagamentos com praticidade.`,
       type: 'WELCOME',
       read: false,

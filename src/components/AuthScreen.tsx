@@ -164,7 +164,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
           <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-tr from-rose-600 to-rose-400 rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4 shadow-lg shadow-rose-900/40">
             <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Agenda Beauty</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Nuvem Agenda</h1>
           <p className="text-stone-400 text-xs mt-1">Plataforma SaaS Multiempresa para Salões & Clientes</p>
 
           <div className="flex bg-stone-800/80 p-1 rounded-xl mt-5 sm:mt-6 text-xs">
@@ -279,7 +279,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
                     className="p-2.5 bg-stone-100 hover:bg-stone-200 border border-stone-200 rounded-xl text-left transition-all"
                   >
                     <span className="text-[10px] text-stone-600 font-semibold uppercase block">Estabelecimento</span>
-                    <strong className="text-xs text-stone-900 block truncate">Agenda Beauty SP</strong>
+                    <strong className="text-xs text-stone-900 block truncate">Nuvem Agenda SP</strong>
                   </button>
                 </div>
 
@@ -304,7 +304,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenPu
             <form onSubmit={handleCustomerRegister} className="space-y-3.5">
               <div className="p-3 bg-rose-50/70 rounded-xl border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
                 <Heart className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>Crie sua conta única para agendar em qualquer estabelecimento parceiro do Agenda Beauty.</span>
+                <span>Crie sua conta única para agendar em qualquer estabelecimento parceiro do Nuvem Agenda.</span>
               </div>
 
               <div>

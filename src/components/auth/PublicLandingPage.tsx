@@ -36,7 +36,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
               <Sparkles className="w-5 h-5 text-white" />
             </div>
             <div>
-              <span className="font-bold text-stone-900 text-sm sm:text-base font-serif">Agenda Beauty</span>
+              <span className="font-bold text-stone-900 text-sm sm:text-base font-serif">Nuvem Agenda</span>
               <span className="hidden sm:inline-block ml-2 text-[11px] text-stone-500 font-medium">
                 · Plataforma Oficial de Agendamento
               </span>
@@ -129,7 +129,7 @@ export const PublicLandingPage: React.FC<PublicLandingPageProps> = ({
       <footer className="bg-white border-t border-stone-200 py-6 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
           <div>
-            <span>© {new Date().getFullYear()} Agenda Beauty SaaS · Todos os direitos reservados.</span>
+            <span>© {new Date().getFullYear()} Nuvem Agenda SaaS · Todos os direitos reservados.</span>
           </div>
 
           <div className="flex items-center gap-4">

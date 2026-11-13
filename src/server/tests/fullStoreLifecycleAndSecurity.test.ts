@@ -120,7 +120,7 @@ async function runFullStoreLifecycleAndSecurityTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         password: '123456',
         portalType: 'SUPER_ADMIN',
         botGuard: { hpField: 'bot-filled-this' },
@@ -153,7 +153,7 @@ async function runFullStoreLifecycleAndSecurityTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-enforce-antibot': 'true' },
       body: JSON.stringify({
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         password: '123456',
         portalType: 'SUPER_ADMIN',
       }),
@@ -166,7 +166,7 @@ async function runFullStoreLifecycleAndSecurityTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-enforce-antibot': 'true' },
       body: JSON.stringify({
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         password: '123456',
         portalType: 'SUPER_ADMIN',
         botGuard: { ...validGuardWrongAnswer, challengeAnswer: '999' },
@@ -179,7 +179,7 @@ async function runFullStoreLifecycleAndSecurityTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-enforce-antibot': 'true' },
       body: JSON.stringify({
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         password: '123456',
         portalType: 'SUPER_ADMIN',
         botGuard: {
@@ -232,7 +232,7 @@ async function runFullStoreLifecycleAndSecurityTests() {
         'User-Agent': 'python-requests/2.31.0',
       },
       body: JSON.stringify({
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         password: '123456',
         portalType: 'SUPER_ADMIN',
         botGuard: uaGuard,
@@ -267,7 +267,7 @@ async function runFullStoreLifecycleAndSecurityTests() {
     const forgedToken = Buffer.from(
       JSON.stringify({
         userId: 'user-master-1',
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         tenantId: 'biz-1',
         role: 'SUPER_ADMIN',
         isMasterAdmin: true,
@@ -295,7 +295,7 @@ async function runFullStoreLifecycleAndSecurityTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-enforce-antibot': 'true' },
       body: JSON.stringify({
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         password: '123456',
         portalType: 'SUPER_ADMIN',
         botGuard: masterGuard,
@@ -311,7 +311,7 @@ async function runFullStoreLifecycleAndSecurityTests() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-enforce-antibot': 'true' },
       body: JSON.stringify({
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         password: '123456',
         botGuard: masterOnCustomerGuard,
       }),

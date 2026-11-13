@@ -24,6 +24,8 @@ import {
   Check,
   Share2,
   Trash2,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 
 interface MasterAdminPortalProps {
@@ -39,7 +41,7 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
   onBackToApp,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'plans' | 'users' | 'audit'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'plans' | 'users' | 'audit' | 'security'>('dashboard');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<any>(null);
   const [tenants, setTenants] = useState<any[]>([]);
@@ -89,6 +91,58 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [createTenantError, setCreateTenantError] = useState('');
   const [createdTenantResult, setCreatedTenantResult] = useState<any>(null);
+
+  // Super admin password change state
+  const [adminCurrentPassword, setAdminCurrentPassword] = useState('');
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+  const [adminPasswordFeedback, setAdminPasswordFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [adminChangingPassword, setAdminChangingPassword] = useState(false);
+
+  const handleAdminChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminPasswordFeedback(null);
+    if (!adminCurrentPassword || !adminNewPassword || !adminConfirmPassword) {
+      setAdminPasswordFeedback({ type: 'error', message: 'Preencha todos os campos de senha.' });
+      return;
+    }
+    if (adminNewPassword !== adminConfirmPassword) {
+      setAdminPasswordFeedback({ type: 'error', message: 'A nova senha e a confirmação não conferem.' });
+      return;
+    }
+    if (adminNewPassword.length < 6) {
+      setAdminPasswordFeedback({ type: 'error', message: 'A nova senha deve ter pelo menos 6 caracteres.' });
+      return;
+    }
+
+    setAdminChangingPassword(true);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('agenda_token') : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        headers['x-session-token'] = token;
+      }
+      const res = await fetch('/api/v1/auth/change-password', {
+        method: 'PUT',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ currentPassword: adminCurrentPassword, newPassword: adminNewPassword }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Erro ao alterar senha.');
+      }
+      setAdminPasswordFeedback({ type: 'success', message: 'Senha do Super Admin alterada com sucesso!' });
+      setAdminCurrentPassword('');
+      setAdminNewPassword('');
+      setAdminConfirmPassword('');
+    } catch (err: any) {
+      setAdminPasswordFeedback({ type: 'error', message: err.message || 'Erro ao alterar senha.' });
+    } finally {
+      setAdminChangingPassword(false);
+    }
+  };
   const [copiedPublicLink, setCopiedPublicLink] = useState(false);
   const [copiedOwnerLink, setCopiedOwnerLink] = useState(false);
   const [copiedWelcomeMessage, setCopiedWelcomeMessage] = useState(false);
@@ -301,7 +355,7 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
         amountCents: cents,
         dueDate: new Date(`${invoiceDueDate}T12:00:00-03:00`).toISOString(),
         status: 'PENDING',
-        notes: invoiceNotes.trim() || 'Mensalidade SaaS Agenda Beauty',
+        notes: invoiceNotes.trim() || 'Mensalidade SaaS Nuvem Agenda',
       }),
     }).then((r) => r.json());
 
@@ -468,7 +522,7 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-sm sm:text-base font-bold truncate">Agenda Beauty · Master Admin SaaS</h1>
+                <h1 className="text-sm sm:text-base font-bold truncate">Nuvem Agenda · Master Admin SaaS</h1>
                 <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-rose-500/20 text-rose-300 rounded-md border border-rose-500/30">
                   SUPER_ADMIN
                 </span>
@@ -529,6 +583,7 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
             { id: 'plans', label: 'Planos Comerciais', icon: CreditCard },
             { id: 'users', label: 'Usuários Globais', icon: Users },
             { id: 'audit', label: 'Auditoria Global', icon: History },
+            { id: 'security', label: 'Segurança & Senha', icon: Lock },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -1135,6 +1190,103 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* TAB 6: SECURITY */}
+        {activeTab === 'security' && (
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6 max-w-2xl mx-auto">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-stone-900 font-serif">Alterar Senha do Super Admin</h2>
+                <p className="text-xs text-stone-500">Gerencie a segurança e credenciais de acesso global ao Master Admin.</p>
+              </div>
+            </div>
+
+            {adminPasswordFeedback && (
+              <div
+                className={`p-3.5 rounded-xl text-xs font-medium border flex items-center gap-2 ${
+                  adminPasswordFeedback.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-700'
+                }`}
+              >
+                {adminPasswordFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{adminPasswordFeedback.message}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAdminChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+                  Senha Atual
+                </label>
+                <input
+                  type="password"
+                  value={adminCurrentPassword}
+                  onChange={(e) => setAdminCurrentPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+                    Nova Senha
+                  </label>
+                  <input
+                    type="password"
+                    value={adminNewPassword}
+                    onChange={(e) => setAdminNewPassword(e.target.value)}
+                    required
+                    placeholder="Mínimo 6 caracteres"
+                    className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-stone-600 mb-1.5">
+                    Confirmar Nova Senha
+                  </label>
+                  <input
+                    type="password"
+                    value={adminConfirmPassword}
+                    onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                    required
+                    placeholder="Repita a nova senha"
+                    className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-stone-100 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={adminChangingPassword}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98]"
+                >
+                  {adminChangingPassword ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Alterando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-4 h-4" />
+                      <span>Alterar Senha de Administrador</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         )}
       </main>
@@ -1775,7 +1927,7 @@ export const MasterAdminPortal: React.FC<MasterAdminPortalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const msg = `Olá ${createdTenantResult.owner?.name}! Seu salão *${createdTenantResult.tenant?.name}* foi credenciado com sucesso no Agenda Beauty! 🌟\n\n📌 *Link da sua loja para suas clientes agendarem:*\n${window.location.origin}/agendar/${createdTenantResult.tenant?.slug}\n\n🔐 *Seu acesso ao painel administrativo do salão:*\n${window.location.origin}/acesso-lojista\n*E-mail:* ${createdTenantResult.owner?.email}\n*Senha inicial:* ${newTenantForm.ownerPassword}`;
+                      const msg = `Olá ${createdTenantResult.owner?.name}! Seu salão *${createdTenantResult.tenant?.name}* foi credenciado com sucesso no Nuvem Agenda! 🌟\n\n📌 *Link da sua loja para suas clientes agendarem:*\n${window.location.origin}/agendar/${createdTenantResult.tenant?.slug}\n\n🔐 *Seu acesso ao painel administrativo do salão:*\n${window.location.origin}/acesso-lojista\n*E-mail:* ${createdTenantResult.owner?.email}\n*Senha inicial:* ${newTenantForm.ownerPassword}`;
                       navigator.clipboard?.writeText(msg);
                       setCopiedWelcomeMessage(true);
                       setTimeout(() => setCopiedWelcomeMessage(false), 2500);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { db, memoryStore } from '../storage.js';
+import { getMySqlPool } from '../db/mysql.js';
 import { customerStorage } from '../customerStorage.js';
 import { saasService } from '../saasService.js';
 import {
@@ -587,6 +588,62 @@ router.post('/reset-password', async (req, res, next) => {
     }
 
     res.json({ success: true, message: 'Senha redefinida com sucesso!' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Change Password (Authenticated: Super Admin, Lojista/Equipe, Cliente)
+router.put('/change-password', authMiddleware, async (req, res, next) => {
+  try {
+    saasService.ensureSaaSSeedData();
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, error: 'Informe a senha atual e a nova senha.' });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ success: false, error: 'A nova senha deve ter pelo menos 6 caracteres.' });
+    }
+
+    const authUser = req.user;
+    if (!authUser?.id) {
+      return res.status(401).json({ success: false, error: 'Usuário não autenticado.' });
+    }
+
+    let user = authUser.email ? await db.findUserByEmail(authUser.email) : null;
+    if (!user) {
+      user = memoryStore.users.find(
+        (u: any) =>
+          u.id === authUser.id ||
+          (authUser.email && String(u.email || '').toLowerCase() === String(authUser.email).toLowerCase())
+      ) || null;
+    }
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'Usuário não encontrado.' });
+    }
+
+    const isValid = bcrypt.compareSync(String(currentPassword), user.passwordHash);
+    if (!isValid) {
+      return res.status(400).json({ success: false, error: 'A senha atual está incorreta.' });
+    }
+
+    const newHash = await bcrypt.hash(String(newPassword), 10);
+    user.passwordHash = newHash;
+
+    // Also ensure memoryStore entry stays synchronized
+    const memUser = memoryStore.users.find((u: any) => u.id === user.id || u.email === user.email);
+    if (memUser) {
+      memUser.passwordHash = newHash;
+    }
+
+    const pool = getMySqlPool();
+    if (pool) {
+      try {
+        await pool.execute(`UPDATE User SET passwordHash = ?, updatedAt = NOW() WHERE id = ?`, [newHash, user.id]);
+      } catch (e) {}
+    }
+
+    res.json({ success: true, message: 'Senha alterada com sucesso!' });
   } catch (error) {
     next(error);
   }

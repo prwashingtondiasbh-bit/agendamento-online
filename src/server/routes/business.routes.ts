@@ -85,7 +85,7 @@ router.get('/team-members', requireRole(['OWNER', 'MANAGER']), async (req, res, 
            FROM TenantMember tm
            JOIN User u ON u.id = tm.userId
            LEFT JOIN Professional p ON p.email = u.email AND p.tenantId = tm.tenantId
-           WHERE tm.tenantId = ? AND tm.role != 'SUPER_ADMIN' AND u.email != 'master@agendabeauty.com.br'
+           WHERE tm.tenantId = ? AND tm.role != 'SUPER_ADMIN' AND LOWER(u.email) != 'prwashingtondiasbh@gmail.com'
            ORDER BY u.name ASC`,
           [tenantId]
         );
@@ -113,7 +113,7 @@ router.get('/team-members', requireRole(['OWNER', 'MANAGER']), async (req, res, 
             u.role !== 'CUSTOMER' &&
             u.role !== 'SUPER_ADMIN' &&
             !u.isMasterAdmin &&
-            String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br'
+            String(u.email || '').toLowerCase() !== 'prwashingtondiasbh@gmail.com'
         )
         .map((u: any) => {
           const prof = u.professionalId
@@ -312,7 +312,7 @@ router.delete('/team-members/:id', requireRole(['OWNER']), async (req, res, next
           return res.status(404).json({ success: false, error: 'Usuário não encontrado nesta empresa.' });
         }
         const memberUser = members[0];
-        if (memberUser.email?.toLowerCase() === 'master@agendabeauty.com.br' || memberUser.role === 'SUPER_ADMIN') {
+        if (memberUser.email?.toLowerCase() === 'prwashingtondiasbh@gmail.com' || memberUser.role === 'SUPER_ADMIN') {
           return res.status(403).json({ success: false, error: 'Acesso negado para remover super admin.' });
         }
 
@@ -329,7 +329,7 @@ router.delete('/team-members/:id', requireRole(['OWNER']), async (req, res, next
         u.tenantId === tenantId &&
         u.role !== 'SUPER_ADMIN' &&
         !u.isMasterAdmin &&
-        String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br'
+        String(u.email || '').toLowerCase() !== 'prwashingtondiasbh@gmail.com'
     );
     if (index !== -1) {
       if (memoryStore.users[index].id === req.user?.id) {

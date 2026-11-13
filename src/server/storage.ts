@@ -25,7 +25,7 @@ export const memoryStore = {
   tenants: [
     {
       id: 'biz-1',
-      name: 'Agenda Beauty Studio São Paulo',
+      name: 'Nuvem Agenda Studio São Paulo',
       slug: 'agenda-beauty-sp',
       phone: '(11) 98765-4321',
       email: 'sp@agendabeauty.com.br',
@@ -323,7 +323,7 @@ export const memoryStore = {
     {
       id: 'lprog-biz-1',
       tenantId: 'biz-1',
-      name: 'Clube Fidelidade Agenda Beauty',
+      name: 'Clube Fidelidade Nuvem Agenda',
       active: true,
       pointsPerReal: 1,
       pointsExpirationDays: 365,

@@ -614,7 +614,7 @@ export default function App() {
             : 'Parâmetros do negócio, link público, plano comercial e regras de agendamento'
         };
       default:
-        return { title: 'Agenda Beauty', subtitle: 'Painel de Gestão' };
+        return { title: 'Nuvem Agenda', subtitle: 'Painel de Gestão' };
     }
   };
 
@@ -623,7 +623,7 @@ export default function App() {
       <div className="min-h-screen bg-stone-900 flex items-center justify-center text-white">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-sm font-medium tracking-wide">Carregando Agenda Beauty...</p>
+          <p className="text-sm font-medium tracking-wide">Carregando Nuvem Agenda...</p>
         </div>
       </div>
     );
@@ -753,7 +753,7 @@ export default function App() {
       <Sidebar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
-        businessName={business?.name || 'Agenda Beauty'}
+        businessName={business?.name || 'Nuvem Agenda'}
         userRole={currentUser.role || 'OWNER'}
         onSwitchToCustomerPortal={() => {
           fetchData(currentUser.role);

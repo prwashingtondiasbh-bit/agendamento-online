@@ -146,12 +146,20 @@ export const saasService = {
       }
     }
 
-    // Ensure Master Admin user always exists
-    if (!store.users.some((u: any) => u.email === 'master@agendabeauty.com.br')) {
+    // Ensure Master Admin user always exists and uses updated email
+    const existingMaster = store.users.find(
+      (u: any) =>
+        u.id === 'user-master-1' ||
+        u.isMasterAdmin ||
+        u.role === 'SUPER_ADMIN' ||
+        String(u.email || '').toLowerCase() === 'prwashingtondiasbh@gmail.com' ||
+        String(u.email || '').toLowerCase() === 'master@agendabeauty.com.br'
+    );
+    if (!existingMaster) {
       store.users.push({
         id: 'user-master-1',
         name: 'Master Admin SaaS',
-        email: 'master@agendabeauty.com.br',
+        email: 'prwashingtondiasbh@gmail.com',
         phone: '(11) 99999-0000',
         passwordHash: bcrypt.hashSync('123456', 10),
         tenantId: 'biz-1',
@@ -162,6 +170,8 @@ export const saasService = {
         resetExpires: null,
         active: true,
       });
+    } else if (String(existingMaster.email || '').toLowerCase() === 'master@agendabeauty.com.br') {
+      existingMaster.email = 'prwashingtondiasbh@gmail.com';
     }
 
     const isTestMode = process.env.NODE_ENV === 'test' || process.env.AGENDA_TEST_MODE === '1';
@@ -434,7 +444,7 @@ export const saasService = {
             u.id === tm.userId &&
             (u.isMasterAdmin ||
               u.role === 'SUPER_ADMIN' ||
-              String(u.email || '').toLowerCase() === 'master@agendabeauty.com.br')
+              String(u.email || '').toLowerCase() === 'prwashingtondiasbh@gmail.com')
         )
     );
     for (const u of store.users) {
@@ -444,7 +454,7 @@ export const saasService = {
         u.role !== 'CUSTOMER' &&
         u.role !== 'SUPER_ADMIN' &&
         !u.isMasterAdmin &&
-        String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br'
+        String(u.email || '').toLowerCase() !== 'prwashingtondiasbh@gmail.com'
       ) {
         const exists = store.tenantMembers.some(
           (tm: any) => tm.userId === u.id && tm.tenantId === u.tenantId
@@ -1255,12 +1265,23 @@ export const saasService = {
             (u: any) =>
               u.isMasterAdmin ||
               u.role === 'SUPER_ADMIN' ||
-              String(u.email || '').toLowerCase() === 'master@agendabeauty.com.br'
+              String(u.email || '').toLowerCase() === 'prwashingtondiasbh@gmail.com'
           );
 
           const dedupedUsersMap = new Map<string, any>();
           for (const u of userRows) {
             if (!u || !u.id) continue;
+            if (
+              u.id === 'user-master-1' &&
+              String(u.email || '').toLowerCase() === 'master@agendabeauty.com.br'
+            ) {
+              u.email = 'prwashingtondiasbh@gmail.com';
+              pool
+                .execute(
+                  `UPDATE User SET email = 'prwashingtondiasbh@gmail.com', updatedAt = NOW() WHERE id = 'user-master-1'`
+                )
+                .catch(() => {});
+            }
             const existingMem = store.users.find(
               (mu: any) =>
                 mu.id === u.id ||
@@ -1272,7 +1293,7 @@ export const saasService = {
                 u.role === 'SUPER_ADMIN' ||
                 u.memberRole === 'SUPER_ADMIN' ||
                 existingMem?.isMasterAdmin ||
-                emailLower === 'master@agendabeauty.com.br'
+                emailLower === 'prwashingtondiasbh@gmail.com'
             );
             const isInClients = (store.clients || []).some(
               (c: any) =>
@@ -1411,7 +1432,7 @@ export const saasService = {
         slug: t.slug,
         description:
           t.description ||
-          'Estabelecimento parceiro oficial Agenda Beauty com agendamento online rápido e seguro.',
+          'Estabelecimento parceiro oficial Nuvem Agenda com agendamento online rápido e seguro.',
         logoUrl: t.logoUrl || '',
         phone: t.phone || '',
         email: t.email || '',
@@ -1566,7 +1587,7 @@ export const saasService = {
       user &&
       (user.isMasterAdmin ||
         user.role === 'SUPER_ADMIN' ||
-        String(user.email || '').toLowerCase() === 'master@agendabeauty.com.br')
+        String(user.email || '').toLowerCase() === 'prwashingtondiasbh@gmail.com')
     ) {
       return [];
     }
@@ -1851,7 +1872,7 @@ export const saasService = {
           (u: any) =>
             !u.isMasterAdmin &&
             u.role !== 'SUPER_ADMIN' &&
-            String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br' &&
+            String(u.email || '').toLowerCase() !== 'prwashingtondiasbh@gmail.com' &&
             (u.tenantId === t.id ||
               store.tenantMembers.some((tm: any) => tm.tenantId === t.id && tm.userId === u.id))
         ).length;
@@ -1934,7 +1955,7 @@ export const saasService = {
         (u: any) =>
           !u.isMasterAdmin &&
           u.role !== 'SUPER_ADMIN' &&
-          String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br' &&
+          String(u.email || '').toLowerCase() !== 'prwashingtondiasbh@gmail.com' &&
           ((u.tenantId === tenantId && u.role !== 'CUSTOMER') ||
             store.tenantMembers.some((tm: any) => tm.tenantId === tenantId && tm.userId === u.id))
       )
@@ -2076,7 +2097,7 @@ export const saasService = {
         !u.isMasterAdmin &&
         u.role !== 'SUPER_ADMIN' &&
         u.role !== 'CUSTOMER' &&
-        String(u.email || '').toLowerCase() !== 'master@agendabeauty.com.br'
+        String(u.email || '').toLowerCase() !== 'prwashingtondiasbh@gmail.com'
       ) {
         candidateUserIds.add(u.id);
       }
@@ -2135,7 +2156,7 @@ export const saasService = {
 
           if (
             !dbUser ||
-            emailLower === 'master@agendabeauty.com.br' ||
+            emailLower === 'prwashingtondiasbh@gmail.com' ||
             memUser?.isMasterAdmin ||
             memUser?.role === 'SUPER_ADMIN' ||
             memUser?.role === 'CUSTOMER' ||
@@ -2159,7 +2180,7 @@ export const saasService = {
           if (remCli > 0) continue;
 
           await conn.execute(
-            `DELETE FROM User WHERE id = ? AND LOWER(email) <> 'master@agendabeauty.com.br'`,
+            `DELETE FROM User WHERE id = ? AND LOWER(email) <> 'prwashingtondiasbh@gmail.com'`,
             [uid]
           );
           removedOrphanedUsers.push(uid);
@@ -2247,7 +2268,7 @@ export const saasService = {
       const isProtected =
         Boolean(u.isMasterAdmin) ||
         u.role === 'SUPER_ADMIN' ||
-        String(u.email || '').toLowerCase() === 'master@agendabeauty.com.br' ||
+        String(u.email || '').toLowerCase() === 'prwashingtondiasbh@gmail.com' ||
         u.id === params.actorId ||
         u.id === 'user-master-1';
 

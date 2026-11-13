@@ -418,7 +418,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
                   <div>
                     <span className="text-stone-600 block">Local de Atendimento</span>
                     <strong className="text-stone-900 font-semibold">
-                      {business?.name || 'Agenda Beauty Studio'}
+                      {business?.name || 'Nuvem Agenda Studio'}
                     </strong>
                     <span className="text-stone-600 block">
                       {business?.address || 'Endereço informado pelo estabelecimento'}
@@ -472,7 +472,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <div className="text-xs text-stone-600 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Reserva protegida pelo Agenda Beauty</span>
+                <span>Reserva protegida pelo Nuvem Agenda</span>
               </div>
 
               <div className="flex items-center gap-2">
