@@ -12,7 +12,14 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { Service, Professional } from '../../types';
-import { generateThirtyMinuteSlots } from '../../utils/timeSlots';
+import {
+  DAY_NAMES_FULL,
+  findNextWorkingDate,
+  formatWorkingDaysSummary,
+  generateThirtyMinuteSlots,
+  getDayOfWeekFromDateStr,
+  getWorkingHourForDate,
+} from '../../utils/timeSlots';
 
 interface CustomerBookingModalProps {
   isOpen: boolean;
@@ -79,8 +86,14 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
           const prf = json.data.professionals || [];
           setDynamicServices(srv);
           setDynamicProfessionals(prf);
+          const nextProfId = prf.some((p: any) => p.id === professionalId) ? professionalId : prf[0]?.id || '';
           setServiceId((prev) => (srv.some((s: any) => s.id === prev) ? prev : srv[0]?.id || ''));
-          setProfessionalId((prev) => (prf.some((p: any) => p.id === prev) ? prev : prf[0]?.id || ''));
+          setProfessionalId(nextProfId);
+          const nextProf = prf.find((p: any) => p.id === nextProfId);
+          if (nextProf && Array.isArray(nextProf.workingHours) && !getWorkingHourForDate(nextProf, date)) {
+            const suggested = findNextWorkingDate(nextProf, date);
+            if (suggested) setDate(suggested);
+          }
         }
       })
       .catch(() => {});
@@ -107,8 +120,10 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
   const [error, setError] = useState('');
   const [serverOccupiedTimes, setServerOccupiedTimes] = useState<string[]>([]);
   const [serverSlotTimes, setServerSlotTimes] = useState<string[]>([]);
+  const [serverDayBlocked, setServerDayBlocked] = useState<boolean>(false);
 
   const selectedService = activeServices.find((s) => s.id === serviceId) || activeServices[0];
+  const selectedProfessional = activeProfessionals.find((p) => p.id === professionalId) || activeProfessionals[0];
 
   const baseThirtyMinHours = React.useMemo(
     () =>
@@ -120,6 +135,19 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
   );
 
   const availableHours = serverSlotTimes.length > 0 ? serverSlotTimes : baseThirtyMinHours;
+
+  const clientDayBlocked = Boolean(
+    selectedProfessional &&
+      Array.isArray(selectedProfessional.workingHours) &&
+      !getWorkingHourForDate(selectedProfessional, date)
+  );
+  const isDayBlocked = serverDayBlocked || clientDayBlocked;
+  const workingDaysSummary = selectedProfessional ? formatWorkingDaysSummary(selectedProfessional) : '';
+  const selectedDayOfWeek = getDayOfWeekFromDateStr(date);
+  const selectedDayName = selectedDayOfWeek !== null ? DAY_NAMES_FULL[selectedDayOfWeek] : 'este dia';
+  const nextWorkingDate = selectedProfessional
+    ? findNextWorkingDate(selectedProfessional, new Date().toISOString().split('T')[0])
+    : null;
 
   useEffect(() => {
     if (!isOpen || !serviceId || !professionalId || !date || !selectedTenantId) return;
@@ -137,6 +165,7 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
       .then((r) => r.json())
       .then((json) => {
         if (!cancelled && json?.success && Array.isArray(json.data?.occupiedSlots)) {
+          setServerDayBlocked(json.data?.professionalWorksOnDate === false);
           setServerOccupiedTimes(json.data.occupiedSlots.map((o: any) => o.time));
           if (Array.isArray(json.data?.slots)) {
             setServerSlotTimes(json.data.slots.map((s: any) => s.time));
@@ -150,6 +179,7 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
   }, [isOpen, selectedTenantId, serviceId, professionalId, date]);
 
   const isSlotOccupied = (slotTime: string) => {
+    if (isDayBlocked) return true;
     if (!date || !professionalId) return false;
     if (serverOccupiedTimes.includes(slotTime)) return true;
     const slotStart = new Date(`${date}T${slotTime}:00-03:00`).getTime();
@@ -217,6 +247,10 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
     }
     if (!date || !time) {
       setError('Selecione a data e o horário.');
+      return;
+    }
+    if (isDayBlocked) {
+      setError(`A profissional não realiza atendimentos em ${selectedDayName}. Selecione outro dia disponível.`);
       return;
     }
     if (isSlotOccupied(time)) {
@@ -335,7 +369,15 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
             </label>
             <select
               value={professionalId}
-              onChange={(e) => setProfessionalId(e.target.value)}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setProfessionalId(nextId);
+                const nextProf = activeProfessionals.find((p) => p.id === nextId);
+                if (nextProf && Array.isArray(nextProf.workingHours) && !getWorkingHourForDate(nextProf, date)) {
+                  const suggested = findNextWorkingDate(nextProf, date);
+                  if (suggested) setDate(suggested);
+                }
+              }}
               className="w-full px-3 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
             >
               {activeProfessionals.map((prof) => (
@@ -344,41 +386,74 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
                 </option>
               ))}
             </select>
+            {workingDaysSummary && (
+              <p className="text-[11px] text-stone-600 mt-1.5">
+                Dias de atendimento: <span className="font-medium text-stone-800">{workingDaysSummary}</span>
+              </p>
+            )}
           </div>
 
           {/* Date & Time */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-stone-800 mb-1.5">
-                Data
-              </label>
-              <input
-                type="date"
-                value={date}
-                min={new Date().toISOString().split('T')[0]}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2.5 min-h-[42px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
-              />
+          <div className="space-y-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-800 mb-1.5">
+                  Data
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setDate(e.target.value)}
+                  className={`w-full px-3 py-2.5 min-h-[42px] text-xs bg-stone-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900 ${
+                    isDayBlocked ? 'border-rose-300 bg-rose-50/40' : 'border-stone-200'
+                  }`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-800 mb-1.5">
+                  Horário
+                </label>
+                <select
+                  value={isDayBlocked ? '' : time}
+                  onChange={(e) => setTime(e.target.value)}
+                  disabled={isDayBlocked}
+                  className="w-full px-3 py-2.5 min-h-[42px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDayBlocked ? (
+                    <option value="">Dia bloqueado — sem atendimento</option>
+                  ) : (
+                    availableHours.map((h) => {
+                      const occupied = isSlotOccupied(h);
+                      return (
+                        <option key={h} value={h} disabled={occupied}>
+                          {h} {occupied ? '— (Indisponível)' : ''}
+                        </option>
+                      );
+                    })
+                  )}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-stone-800 mb-1.5">
-                Horário
-              </label>
-              <select
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="w-full px-3 py-2.5 min-h-[42px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-stone-900"
-              >
-                {availableHours.map((h) => {
-                  const occupied = isSlotOccupied(h);
-                  return (
-                    <option key={h} value={h} disabled={occupied}>
-                      {h} {occupied ? '— (Indisponível)' : ''}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
+            {isDayBlocked && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-rose-800">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                  <span>
+                    <strong>Agenda bloqueada em {selectedDayName}.</strong> A profissional não atende neste dia.
+                  </span>
+                </div>
+                {nextWorkingDate && nextWorkingDate !== date && (
+                  <button
+                    type="button"
+                    onClick={() => setDate(nextWorkingDate)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-semibold transition-colors"
+                  >
+                    Ir para {new Date(`${nextWorkingDate}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Notes */}
@@ -478,8 +553,8 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98]"
+              disabled={loading || isDayBlocked || isSlotOccupied(time)}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold shadow-sm transition-all active:scale-[0.98]"
             >
               {loading ? (
                 <>

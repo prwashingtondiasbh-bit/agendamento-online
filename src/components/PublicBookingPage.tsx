@@ -21,7 +21,14 @@ import {
 import { PixCheckoutModal } from './PixCheckoutModal';
 import { updateDocumentSeo } from '../utils/seo';
 import { AntiBotChallenge, BotGuardPayload } from './auth/AntiBotChallenge';
-import { generateThirtyMinuteSlots } from '../utils/timeSlots';
+import {
+  DAY_NAMES_FULL,
+  findNextWorkingDate,
+  formatWorkingDaysSummary,
+  generateThirtyMinuteSlots,
+  getDayOfWeekFromDateStr,
+  getWorkingHourForDate,
+} from '../utils/timeSlots';
 
 interface PublicBookingPageProps {
   slug: string;
@@ -66,6 +73,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
 
   const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
   const [serverSlotTimes, setServerSlotTimes] = useState<string[]>([]);
+  const [serverDayBlocked, setServerDayBlocked] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState<string>('');
   const [createdAppointment, setCreatedAppointment] = useState<any>(null);
@@ -164,13 +172,23 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
           setServiceId(services[0].id);
         }
 
-        if (savedDraft?.professionalId && profs.some((p: any) => p.id === savedDraft.professionalId)) {
-          setProfessionalId(savedDraft.professionalId);
-        } else if (profs.length > 0) {
-          setProfessionalId(profs[0].id);
+        const resolvedProfId =
+          savedDraft?.professionalId && profs.some((p: any) => p.id === savedDraft.professionalId)
+            ? savedDraft.professionalId
+            : profs[0]?.id || '';
+        if (resolvedProfId) {
+          setProfessionalId(resolvedProfId);
         }
 
-        if (savedDraft?.date) setDate(savedDraft.date);
+        if (savedDraft?.date) {
+          setDate(savedDraft.date);
+        } else {
+          const resolvedProf = profs.find((p: any) => p.id === resolvedProfId);
+          if (resolvedProf && Array.isArray(resolvedProf.workingHours) && !getWorkingHourForDate(resolvedProf, date)) {
+            const suggested = findNextWorkingDate(resolvedProf, date);
+            if (suggested) setDate(suggested);
+          }
+        }
         if (savedDraft?.time) setTime(savedDraft.time);
         if (savedDraft?.notes) setNotes(savedDraft.notes);
 
@@ -213,6 +231,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
           const allTimes: string[] = Array.isArray(json.data?.slots)
             ? json.data.slots.map((s: any) => s.time)
             : baseThirtyMinSlots;
+          setServerDayBlocked(json.data?.professionalWorksOnDate === false);
           setServerSlotTimes(allTimes);
           setOccupiedSlots(occ);
           setTime((prevTime) => {
@@ -229,6 +248,21 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
       cancelled = true;
     };
   }, [slug, establishmentData?.bookingAvailable, serviceId, professionalId, date]);
+
+  const professionalsList = establishmentData?.professionals || [];
+  const selectedProfessionalObj = professionalsList.find((p: any) => p.id === professionalId) || professionalsList[0];
+  const clientDayBlocked = Boolean(
+    selectedProfessionalObj &&
+      Array.isArray(selectedProfessionalObj.workingHours) &&
+      !getWorkingHourForDate(selectedProfessionalObj, date)
+  );
+  const isDayBlocked = serverDayBlocked || clientDayBlocked;
+  const selectedDayOfWeek = getDayOfWeekFromDateStr(date);
+  const selectedDayName = selectedDayOfWeek !== null ? DAY_NAMES_FULL[selectedDayOfWeek] : 'este dia';
+  const nextWorkingDateForProf = selectedProfessionalObj
+    ? findNextWorkingDate(selectedProfessionalObj, new Date().toISOString().split('T')[0])
+    : null;
+  const profWorkingDaysSummary = selectedProfessionalObj ? formatWorkingDaysSummary(selectedProfessionalObj) : '';
 
   const executeBooking = async (overrideToken?: string) => {
     setBookingError('');
@@ -688,7 +722,15 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
                     </label>
                     <select
                       value={professionalId}
-                      onChange={(e) => setProfessionalId(e.target.value)}
+                      onChange={(e) => {
+                        const nextProfId = e.target.value;
+                        setProfessionalId(nextProfId);
+                        const nextProf = professionals.find((p: any) => p.id === nextProfId);
+                        if (nextProf && Array.isArray(nextProf.workingHours) && !getWorkingHourForDate(nextProf, date)) {
+                          const nextDate = findNextWorkingDate(nextProf, date);
+                          if (nextDate) setDate(nextDate);
+                        }
+                      }}
                       className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-rose-500"
                     >
                       {professionals.map((prof: any) => (
@@ -697,6 +739,11 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
                         </option>
                       ))}
                     </select>
+                    {profWorkingDaysSummary && (
+                      <p className="mt-1.5 text-[11px] text-stone-500">
+                        Dias de atendimento: <strong className="text-stone-700">{profWorkingDaysSummary}</strong>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-stone-700 mb-1.5">
@@ -707,7 +754,9 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
                       value={date}
                       min={new Date().toISOString().split('T')[0]}
                       onChange={(e) => setDate(e.target.value)}
-                      className="w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-rose-500"
+                      className={`w-full px-3.5 py-2.5 min-h-[44px] text-xs bg-stone-50 border rounded-xl focus:outline-none focus:border-rose-500 ${
+                        isDayBlocked ? 'border-rose-400 bg-rose-50/40' : 'border-stone-200'
+                      }`}
                     />
                   </div>
                 </div>
@@ -716,29 +765,60 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
                   <label className="block text-xs font-semibold text-stone-700 mb-2">
                     Horários Disponíveis ({date})
                   </label>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                    {availableHours.map((h) => {
-                      const isOccupied = occupiedSlots.includes(h);
-                      const isSelected = time === h && !isOccupied;
-                      return (
+                  {isDayBlocked ? (
+                    <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-2">
+                      <div className="flex items-start gap-2 font-semibold">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p>
+                            Agenda bloqueada em {selectedDayName}:{' '}
+                            <strong>{selectedProfessionalObj?.name || 'a profissional'}</strong> não possui horários de atendimento neste dia da semana.
+                          </p>
+                          {profWorkingDaysSummary && (
+                            <p className="text-[11px] text-rose-700 font-normal mt-1">
+                              Dias disponíveis: <strong>{profWorkingDaysSummary}</strong>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {nextWorkingDateForProf && (
                         <button
-                          key={h}
                           type="button"
-                          disabled={isOccupied}
-                          onClick={() => setTime(h)}
-                          className={`py-2.5 px-3 rounded-xl text-xs font-semibold border transition-all tabular-nums ${
-                            isOccupied
-                              ? 'bg-stone-100 border-stone-200 text-stone-400 line-through cursor-not-allowed'
-                              : isSelected
-                              ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
-                              : 'bg-white border-stone-200 text-stone-800 hover:border-rose-300'
-                          }`}
+                          onClick={() => setDate(nextWorkingDateForProf)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-[11px] transition-colors"
                         >
-                          {h}
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>
+                            Ir para próximo dia disponível ({new Date(`${nextWorkingDateForProf}T12:00:00`).toLocaleDateString('pt-BR')})
+                          </span>
                         </button>
-                      );
-                    })}
-                  </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                      {availableHours.map((h) => {
+                        const isOccupied = occupiedSlots.includes(h);
+                        const isSelected = time === h && !isOccupied;
+                        return (
+                          <button
+                            key={h}
+                            type="button"
+                            disabled={isOccupied}
+                            onClick={() => setTime(h)}
+                            className={`py-2.5 px-3 rounded-xl text-xs font-semibold border transition-all tabular-nums ${
+                              isOccupied
+                                ? 'bg-stone-100 border-stone-200 text-stone-400 line-through cursor-not-allowed'
+                                : isSelected
+                                ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
+                                : 'bg-white border-stone-200 text-stone-800 hover:border-rose-300'
+                            }`}
+                          >
+                            {h}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -854,8 +934,8 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
 
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="w-full py-3.5 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-semibold shadow-sm transition-all flex items-center justify-center gap-2"
+                  disabled={submitting || isDayBlocked || occupiedSlots.includes(time)}
+                  className="w-full py-3.5 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold shadow-sm transition-all flex items-center justify-center gap-2"
                 >
                   {submitting ? (
                     <>

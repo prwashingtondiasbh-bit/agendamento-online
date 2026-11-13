@@ -1,7 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Client, Professional, Service } from '../types';
 import { X, Plus, Trash2, UserPlus, Check, Clock, AlertTriangle } from 'lucide-react';
-import { ensureSlotInList, generateThirtyMinuteSlots } from '../utils/timeSlots';
+import {
+  DAY_NAMES_FULL,
+  ensureSlotInList,
+  findNextWorkingDate,
+  formatWorkingDaysSummary,
+  generateThirtyMinuteSlots,
+  getDayOfWeekFromDateStr,
+  getWorkingHourForDate,
+  isTimeInBreakWindow,
+} from '../utils/timeSlots';
 
 const ADMIN_THIRTY_MIN_SLOTS = generateThirtyMinuteSlots('07:00', '22:00', true);
 
@@ -135,6 +144,35 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   };
 
   const selectedService = activeServices.find((s) => s.id === serviceId);
+  const selectedProf = activeProfessionals.find((p) => p.id === professionalId);
+  const whForDay = getWorkingHourForDate(selectedProf, date);
+  const hasWorkingHoursConfig = Boolean(selectedProf && Array.isArray(selectedProf.workingHours));
+  const isDayBlocked = hasWorkingHoursConfig && !whForDay;
+  const profSlotsForDay = React.useMemo(() => {
+    if (!whForDay) return ADMIN_THIRTY_MIN_SLOTS;
+    const raw = generateThirtyMinuteSlots(whForDay.startTime, whForDay.endTime, false);
+    const durMin = Number(selectedService?.durationMin || 60);
+    const [endH, endM = 0] = String(whForDay.endTime || '20:00').split(':').map(Number);
+    const endTotalMin = endH * 60 + endM;
+    return raw.filter((slot) => {
+      const [h, m = 0] = slot.split(':').map(Number);
+      return h * 60 + m + durMin <= endTotalMin;
+    });
+  }, [whForDay, selectedService?.durationMin]);
+  const selectedDayOfWeek = getDayOfWeekFromDateStr(date);
+  const selectedDayName = selectedDayOfWeek !== null ? DAY_NAMES_FULL[selectedDayOfWeek] : 'esta data';
+  const profWorkingDaysSummary = selectedProf ? formatWorkingDaysSummary(selectedProf) : '';
+  const nextWorkingDate = selectedProf ? findNextWorkingDate(selectedProf, date) : null;
+
+  useEffect(() => {
+    if (!isOpen || !whForDay || profSlotsForDay.length === 0) return;
+    if (!profSlotsForDay.includes(time) || isTimeInBreakWindow(time, whForDay, Number(selectedService?.durationMin || 60))) {
+      const firstFree = profSlotsForDay.find(
+        (slot) => !isTimeInBreakWindow(slot, whForDay, Number(selectedService?.durationMin || 60))
+      );
+      if (firstFree) setTime(firstFree);
+    }
+  }, [isOpen, professionalId, date, whForDay, profSlotsForDay, selectedService?.durationMin]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4">
@@ -338,26 +376,63 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full min-h-[44px] px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm"
+                className={`w-full min-h-[44px] px-3.5 py-2.5 bg-stone-50 border rounded-xl text-sm ${
+                  isDayBlocked ? 'border-rose-400 bg-rose-50/50' : 'border-stone-200'
+                }`}
                 required
               />
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Horário</label>
               <select
-                value={time}
+                value={isDayBlocked ? '' : time}
+                disabled={isDayBlocked}
                 onChange={(e) => setTime(e.target.value)}
-                className="w-full min-h-[44px] px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm"
+                className="w-full min-h-[44px] px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm disabled:bg-stone-100 disabled:text-stone-400"
                 required
               >
-                {ensureSlotInList(ADMIN_THIRTY_MIN_SLOTS, time).map((slot) => (
-                  <option key={slot} value={slot}>
-                    {slot}
-                  </option>
-                ))}
+                {isDayBlocked ? (
+                  <option value="">Sem expediente nesta data</option>
+                ) : (
+                  ensureSlotInList(profSlotsForDay, profSlotsForDay.includes(time) ? time : undefined).map((slot) => {
+                    const inBreak = whForDay
+                      ? isTimeInBreakWindow(slot, whForDay, Number(selectedService?.durationMin || 60))
+                      : false;
+                    return (
+                      <option key={slot} value={slot} disabled={inBreak}>
+                        {slot} {inBreak ? '— (Intervalo)' : ''}
+                      </option>
+                    );
+                  })
+                )}
               </select>
             </div>
           </div>
+
+          {isDayBlocked && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 space-y-2">
+              <div className="flex items-start gap-2 font-semibold">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p>
+                    Agenda bloqueada em {selectedDayName}: <strong>{selectedProf?.name}</strong> não possui expediente configurado neste dia.
+                  </p>
+                  <p className="text-[11px] font-normal text-rose-700 mt-0.5">
+                    Dias de atendimento: <strong>{profWorkingDaysSummary}</strong>
+                  </p>
+                </div>
+              </div>
+              {nextWorkingDate && (
+                <button
+                  type="button"
+                  onClick={() => setDate(nextWorkingDate)}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-[11px]"
+                >
+                  Ir para próximo dia disponível ({new Date(`${nextWorkingDate}T12:00:00`).toLocaleDateString('pt-BR')})
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Origin & Initial Status (Section 5) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -424,8 +499,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={submitting}
-              className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-500/20 disabled:opacity-50"
+              disabled={submitting || isDayBlocked}
+              className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Registrando...' : 'Confirmar Agendamento'}
             </button>
@@ -876,15 +951,9 @@ export const ProfessionalModal: React.FC<ProfessionalModalProps> = ({
       setPhone(professional.phone || '');
       setActive(professional.active !== false);
       setWorkingHours(
-        professional.workingHours && professional.workingHours.length > 0
+        Array.isArray(professional.workingHours)
           ? professional.workingHours
-          : [1, 2, 3, 4, 5, 6].map((d) => ({
-              dayOfWeek: d,
-              startTime: '09:00',
-              endTime: '19:00',
-              breakStart: '12:00',
-              breakEnd: '13:00',
-            }))
+          : []
       );
     } else {
       setName('');

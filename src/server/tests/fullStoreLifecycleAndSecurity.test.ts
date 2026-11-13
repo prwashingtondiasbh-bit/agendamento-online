@@ -647,11 +647,11 @@ async function runFullStoreLifecycleAndSecurityTests() {
       },
       body: JSON.stringify({
         workingHours: [
-          { dayOfWeek: targetDayOfWeek, startTime: '08:00', endTime: '20:00', breakStart: '12:00', breakEnd: '13:00' },
+          { dayOfWeek: targetDayOfWeek, startTime: '09:00', endTime: '18:00', breakStart: '12:00', breakEnd: '13:00' },
         ],
       }),
     });
-    assert.strictEqual(updateProfWhRes.status, 200, 'Lojista deve configurar horário de almoço da profissional');
+    assert.strictEqual(updateProfWhRes.status, 200, 'Lojista deve configurar horário de trabalho e almoço da profissional');
 
     console.log('✅ Fase 2 concluída: Loja criada, alterações salvas, equipe, bloqueio e horário de almoço aplicados!');
 
@@ -750,15 +750,106 @@ async function runFullStoreLifecycleAndSecurityTests() {
     });
     assert.strictEqual(custLoginRes.status, 200, 'Cliente deve autenticar no portal CUSTOMER');
 
-    // Verify 12:00 (lunch break) is blocked in public available slots and booking is rejected with 409
+    // Verify non-working day is completely blocked in availability and rejected (409) in both public & manual bookings
+    const nonWorkingDate = new Date(new Date(`${targetDate}T12:00:00-03:00`).getTime() + 24 * 3600 * 1000)
+      .toISOString()
+      .split('T')[0];
+    const nonWorkingSlotsRes = await jsonFetch(
+      `/public/tenants/${storeSlug}/available-slots?serviceId=${serviceId}&professionalId=${profId}&date=${nonWorkingDate}`
+    );
+    assert.strictEqual(nonWorkingSlotsRes.status, 200);
+    assert.strictEqual(
+      nonWorkingSlotsRes.body.data.professionalWorksOnDate,
+      false,
+      'Dia sem expediente configurado deve retornar professionalWorksOnDate=false'
+    );
+    assert.strictEqual(
+      nonWorkingSlotsRes.body.data.availableSlots.length,
+      0,
+      'Nenhum horário deve ficar disponível em dia sem atendimento'
+    );
+    assert.ok(
+      nonWorkingSlotsRes.body.data.slots.every((s: any) => s.available === false && s.reason === 'DIA_SEM_ATENDIMENTO'),
+      'Todos os slots de dia sem atendimento devem ter reason DIA_SEM_ATENDIMENTO'
+    );
+
+    const nonWorkingPublicBookRes = await jsonFetch(`/public/tenants/${storeSlug}/appointments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${customerToken}`,
+        'x-enforce-token-signature': 'true',
+      },
+      body: JSON.stringify({
+        serviceId,
+        professionalId: profId,
+        date: nonWorkingDate,
+        time: '10:00',
+        notes: 'Tentativa em dia sem atendimento',
+      }),
+    });
+    assert.strictEqual(
+      nonWorkingPublicBookRes.status,
+      409,
+      'Agendamento público em dia que a profissional não trabalha deve retornar 409'
+    );
+
+    const nonWorkingManualBookRes = await jsonFetch('/appointments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ownerToken}`,
+        'x-enforce-token-signature': 'true',
+      },
+      body: JSON.stringify({
+        clientId: customerClientId,
+        professionalId: profId,
+        serviceId,
+        dateTime: `${nonWorkingDate}T10:00:00-03:00`,
+        origin: 'PRESENCIAL',
+      }),
+    });
+    assert.strictEqual(
+      nonWorkingManualBookRes.status,
+      409,
+      'Agendamento manual em dia que a profissional não trabalha deve retornar 409'
+    );
+
+    // Verify 12:00 (lunch break) and out-of-shift hours (08:30 / 18:30) are blocked in slots and rejected with 409
     const lunchSlotsRes = await jsonFetch(
       `/public/tenants/${storeSlug}/available-slots?serviceId=${serviceId}&professionalId=${profId}&date=${targetDate}`
     );
     assert.strictEqual(lunchSlotsRes.status, 200);
+    assert.strictEqual(lunchSlotsRes.body.data.professionalWorksOnDate, true);
     assert.ok(
       lunchSlotsRes.body.data.occupiedSlots.some((o: any) => o.time === '12:00'),
       'Horário de almoço (12:00) deve constar como ocupado na disponibilidade pública'
     );
+    assert.ok(
+      lunchSlotsRes.body.data.occupiedSlots.some((o: any) => o.time === '08:30' && o.reason === 'FORA_DO_EXPEDIENTE'),
+      'Horário 08:30 antes do início do expediente (09:00) deve constar como FORA_DO_EXPEDIENTE'
+    );
+    assert.ok(
+      lunchSlotsRes.body.data.occupiedSlots.some((o: any) => o.time === '18:30' && o.reason === 'FORA_DO_EXPEDIENTE'),
+      'Horário 18:30 após fim do expediente (18:00) deve constar como FORA_DO_EXPEDIENTE'
+    );
+
+    const earlyOutOfShiftRes = await jsonFetch(`/public/tenants/${storeSlug}/appointments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${customerToken}`,
+        'x-enforce-token-signature': 'true',
+      },
+      body: JSON.stringify({
+        serviceId,
+        professionalId: profId,
+        date: targetDate,
+        time: '08:30',
+        notes: 'Tentativa fora do expediente',
+      }),
+    });
+    assert.strictEqual(earlyOutOfShiftRes.status, 409, 'Agendamento antes do expediente (08:30) deve retornar 409');
 
     const lunchBookingRes = await jsonFetch(`/public/tenants/${storeSlug}/appointments`, {
       method: 'POST',

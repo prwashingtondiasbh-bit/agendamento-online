@@ -71,6 +71,7 @@ export const CustomerAppointments: React.FC<CustomerAppointmentsProps> = ({
   const [rescheduleError, setRescheduleError] = useState('');
   const [rescheduleSlots, setRescheduleSlots] = useState<string[]>(DEFAULT_THIRTY_MIN_HOURS);
   const [rescheduleOccupied, setRescheduleOccupied] = useState<string[]>([]);
+  const [rescheduleDayBlocked, setRescheduleDayBlocked] = useState<boolean>(false);
 
   useEffect(() => {
     if (!rescheduleModalOpen || !selectedAppointment || !rescheduleDate) return;
@@ -100,6 +101,7 @@ export const CustomerAppointments: React.FC<CustomerAppointmentsProps> = ({
         const allTimes: string[] = Array.isArray(json.data?.slots)
           ? json.data.slots.map((s: any) => s.time)
           : DEFAULT_THIRTY_MIN_HOURS;
+        setRescheduleDayBlocked(json.data?.professionalWorksOnDate === false);
         setRescheduleSlots(allTimes);
         setRescheduleOccupied(occ);
         setRescheduleTime((prev) => {
@@ -932,21 +934,35 @@ export const CustomerAppointments: React.FC<CustomerAppointmentsProps> = ({
                 <div>
                   <label className="block font-semibold text-stone-700 mb-1">Novo Horário</label>
                   <select
-                    value={rescheduleTime}
+                    value={rescheduleDayBlocked ? '' : rescheduleTime}
+                    disabled={rescheduleDayBlocked}
                     onChange={(e) => setRescheduleTime(e.target.value)}
-                    className="w-full px-3 py-2.5 min-h-[42px] bg-stone-50 border border-stone-200 rounded-xl"
+                    className="w-full px-3 py-2.5 min-h-[42px] bg-stone-50 border border-stone-200 rounded-xl disabled:bg-stone-100 disabled:text-stone-400"
                   >
-                    {rescheduleSlots.map((h) => {
-                      const occ = rescheduleOccupied.includes(h);
-                      return (
-                        <option key={h} value={h} disabled={occ}>
-                          {h} {occ ? '— (Indisponível)' : ''}
-                        </option>
-                      );
-                    })}
+                    {rescheduleDayBlocked ? (
+                      <option value="">Sem atendimento neste dia</option>
+                    ) : (
+                      rescheduleSlots.map((h) => {
+                        const occ = rescheduleOccupied.includes(h);
+                        return (
+                          <option key={h} value={h} disabled={occ}>
+                            {h} {occ ? '— (Indisponível)' : ''}
+                          </option>
+                        );
+                      })
+                    )}
                   </select>
                 </div>
               </div>
+
+              {rescheduleDayBlocked && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>
+                    A profissional não possui horários de atendimento nesta data. Escolha outro dia da semana para reagendar.
+                  </span>
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-stone-700 mb-1">Observação da alteração (opcional)</label>
@@ -969,8 +985,8 @@ export const CustomerAppointments: React.FC<CustomerAppointmentsProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={rescheduleLoading}
-                  className="w-full sm:w-auto px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-semibold"
+                  disabled={rescheduleLoading || rescheduleDayBlocked || rescheduleOccupied.includes(rescheduleTime)}
+                  className="w-full sm:w-auto px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold"
                 >
                   {rescheduleLoading ? 'Validando disponibilidade...' : 'Confirmar Reagendamento'}
                 </button>

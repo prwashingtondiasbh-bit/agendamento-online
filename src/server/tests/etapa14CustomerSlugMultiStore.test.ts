@@ -309,8 +309,13 @@ async function runEtapa14CustomerSlugMultiStoreTests() {
     // Agendamentos em Loja A (COMPLETE com sinal pendente) e Loja B (SIMPLE confirmada),
     // isolamento por slug, aviso de sinal pendente, continuar pagamento, confirmação e expiração
     // -------------------------------------------------------------------------
-    const futureDateA = new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString().split('T')[0];
-    const futureDateB = new Date(Date.now() + 4 * 24 * 3600 * 1000).toISOString().split('T')[0];
+    const pickMonToSatDate = (minDaysAhead: number) => {
+      const d = new Date(Date.now() + minDaysAhead * 24 * 3600 * 1000);
+      if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1);
+      return d.toISOString().split('T')[0];
+    };
+    const futureDateA = pickMonToSatDate(3);
+    const futureDateB = pickMonToSatDate(4);
 
     // Criar agendamento na Loja A (exige sinal de 30% = R$ 60,00 -> PENDING_PAYMENT)
     const bookARes = await jsonFetch(`/public/tenants/${slugA}/appointments`, {

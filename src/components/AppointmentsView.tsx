@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Appointment, Professional, Service, TimeBlock } from '../types';
 import { apiFetch } from '../App';
-import { ensureSlotInList, generateThirtyMinuteSlots } from '../utils/timeSlots';
+import {
+  DAY_NAMES_FULL,
+  ensureSlotInList,
+  formatWorkingDaysSummary,
+  generateThirtyMinuteSlots,
+  getDayOfWeekFromDateStr,
+  getWorkingHourForDate,
+  isTimeInBreakWindow,
+} from '../utils/timeSlots';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -516,6 +524,60 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
           {filteredAppointments.length} reserva(s) • {filteredBlocks.length} bloqueio(s) no período
         </span>
       </div>
+
+      {/* Professional Non-Working Day Notice (Daily View) */}
+      {viewMode === 'DAILY' && (() => {
+        const activeProfs = professionals.filter((p) => p.active !== false);
+        const dayIdx = getDayOfWeekFromDateStr(selectedDate);
+        const dayName = dayIdx !== null ? DAY_NAMES_FULL[dayIdx] : 'esta data';
+        if (filterProfessionalId !== 'ALL') {
+          const targetProf = professionals.find((p) => p.id === filterProfessionalId);
+          if (targetProf && Array.isArray(targetProf.workingHours) && !getWorkingHourForDate(targetProf, selectedDate)) {
+            return (
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 sm:p-4 flex items-start gap-2.5 text-xs text-rose-900">
+                <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">
+                    Dia bloqueado para {targetProf.name} ({dayName})
+                  </p>
+                  <p className="text-rose-700 mt-0.5">
+                    Esta profissional não possui horários de atendimento configurados para {dayName}. Dias ativos:{' '}
+                    <strong>{formatWorkingDaysSummary(targetProf)}</strong>.
+                  </p>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        }
+        const offProfs = activeProfs.filter(
+          (p) => Array.isArray(p.workingHours) && !getWorkingHourForDate(p, selectedDate)
+        );
+        if (activeProfs.length > 0 && offProfs.length === activeProfs.length) {
+          return (
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 sm:p-4 flex items-start gap-2.5 text-xs text-rose-900">
+              <Ban className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Dia sem atendimento configurado ({dayName})</p>
+                <p className="text-rose-700 mt-0.5">
+                  Nenhuma profissional ativa possui expediente configurado para {dayName}. A agenda pública e os agendamentos para este dia permanecem bloqueados.
+                </p>
+              </div>
+            </div>
+          );
+        }
+        if (offProfs.length > 0) {
+          return (
+            <div className="bg-stone-100 border border-stone-200 rounded-2xl p-3 sm:px-4 flex items-center gap-2 text-xs text-stone-700">
+              <Info className="w-4 h-4 text-stone-500 shrink-0" />
+              <span>
+                Sem expediente hoje ({dayName}): <strong>{offProfs.map((p) => p.name).join(', ')}</strong>.
+              </span>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {/* Active TimeBlocks in Selected Period */}
       {filteredBlocks.length > 0 && (
@@ -1089,88 +1151,128 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveAppointmentEdit} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Nova Data</label>
-                  <input
-                    type="date"
-                    required
-                    value={editDate}
-                    onChange={(e) => setEditDate(e.target.value)}
-                    className="w-full min-h-[44px] px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Novo Horário</label>
-                  <select
-                    required
-                    value={editTime}
-                    onChange={(e) => setEditTime(e.target.value)}
-                    className="w-full min-h-[44px] px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
-                  >
-                    {ensureSlotInList(THIRTY_MIN_APPOINTMENT_SLOTS, editTime).map((slot) => (
-                      <option key={slot} value={slot}>
-                        {slot}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              {(() => {
+                const editProf = professionals.find((p) => p.id === editProfessionalId);
+                const editWh = getWorkingHourForDate(editProf, editDate);
+                const isEditDayBlocked = Boolean(editProf && Array.isArray(editProf.workingHours) && !editWh);
+                const editDayIdx = getDayOfWeekFromDateStr(editDate);
+                const editDayName = editDayIdx !== null ? DAY_NAMES_FULL[editDayIdx] : 'esta data';
+                const editDuration = Number(selectedApp.snapshotDurationMin || selectedApp.service?.durationMin || 60);
+                const editSlots = editWh
+                  ? generateThirtyMinuteSlots(editWh.startTime, editWh.endTime, false).filter((slot) => {
+                      const [h, m = 0] = slot.split(':').map(Number);
+                      const [eh, em = 0] = String(editWh.endTime || '20:00').split(':').map(Number);
+                      return h * 60 + m + editDuration <= eh * 60 + em;
+                    })
+                  : THIRTY_MIN_APPOINTMENT_SLOTS;
 
-              <div>
-                <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Profissional Responsável</label>
-                <select
-                  value={editProfessionalId}
-                  onChange={(e) => setEditProfessionalId(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
-                >
-                  {professionals
-                    .filter((p) => p.active !== false || p.id === selectedApp.professionalId)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} — {p.specialty}
-                      </option>
-                    ))}
-                </select>
-              </div>
+                return (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Nova Data</label>
+                        <input
+                          type="date"
+                          required
+                          value={editDate}
+                          onChange={(e) => setEditDate(e.target.value)}
+                          className={`w-full min-h-[44px] px-3 py-2 bg-stone-50 border rounded-xl text-sm ${
+                            isEditDayBlocked ? 'border-rose-400 bg-rose-50/40' : 'border-stone-200'
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Novo Horário</label>
+                        <select
+                          required
+                          disabled={isEditDayBlocked}
+                          value={isEditDayBlocked ? '' : editTime}
+                          onChange={(e) => setEditTime(e.target.value)}
+                          className="w-full min-h-[44px] px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm disabled:bg-stone-100 disabled:text-stone-400"
+                        >
+                          {isEditDayBlocked ? (
+                            <option value="">Sem expediente nesta data</option>
+                          ) : (
+                            ensureSlotInList(editSlots, editTime).map((slot) => {
+                              const inBreak = editWh ? isTimeInBreakWindow(slot, editWh, editDuration) : false;
+                              return (
+                                <option key={slot} value={slot} disabled={inBreak}>
+                                  {slot} {inBreak ? '— (Intervalo)' : ''}
+                                </option>
+                              );
+                            })
+                          )}
+                        </select>
+                      </div>
+                    </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Observações do Atendimento</label>
-                <textarea
-                  rows={2}
-                  value={editNotes}
-                  onChange={(e) => setEditNotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
-                />
-              </div>
+                    {isEditDayBlocked && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <span>
+                          <strong>{editProf?.name}</strong> não atende em {editDayName}. Dias disponíveis:{' '}
+                          <strong>{formatWorkingDaysSummary(editProf)}</strong>.
+                        </span>
+                      </div>
+                    )}
 
-              <div>
-                <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Motivo da Alteração (Auditoria)</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Solicitação da cliente via WhatsApp"
-                  value={editReason}
-                  onChange={(e) => setEditReason(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
-                />
-              </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Profissional Responsável</label>
+                      <select
+                        value={editProfessionalId}
+                        onChange={(e) => setEditProfessionalId(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
+                      >
+                        {professionals
+                          .filter((p) => p.active !== false || p.id === selectedApp.professionalId)
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} — {p.specialty}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
 
-              <div className="pt-3 flex flex-col-reverse sm:flex-row justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedApp(null)}
-                  className="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 border border-stone-200 sm:border-transparent"
-                >
-                  Fechar
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEdit || ['CANCELLED', 'COMPLETED'].includes(selectedApp.status)}
-                  className="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50"
-                >
-                  {savingEdit ? 'Salvando...' : 'Salvar Alterações'}
-                </button>
-              </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Observações do Atendimento</label>
+                      <textarea
+                        rows={2}
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Motivo da Alteração (Auditoria)</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Solicitação da cliente via WhatsApp"
+                        value={editReason}
+                        onChange={(e) => setEditReason(e.target.value)}
+                        className="w-full min-h-[44px] px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
+                      />
+                    </div>
+
+                    <div className="pt-3 flex flex-col-reverse sm:flex-row justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedApp(null)}
+                        className="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-100 border border-stone-200 sm:border-transparent"
+                      >
+                        Fechar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingEdit || isEditDayBlocked || ['CANCELLED', 'COMPLETED'].includes(selectedApp.status)}
+                        className="w-full sm:w-auto min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {savingEdit ? 'Salvando...' : 'Salvar Alterações'}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </form>
           </div>
         </div>
