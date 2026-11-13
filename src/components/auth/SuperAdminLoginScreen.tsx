@@ -11,7 +11,7 @@ export const SuperAdminLoginScreen: React.FC<SuperAdminLoginScreenProps> = ({
   onLoginSuccess,
   onBackToHome,
 }) => {
-  const [email, setEmail] = useState('prwashingtondiasbh@gmail.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -110,9 +110,10 @@ export const SuperAdminLoginScreen: React.FC<SuperAdminLoginScreenProps> = ({
               <input
                 type="email"
                 required
+                autoComplete="off"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="prwashingtondiasbh@gmail.com"
+                placeholder="Digite seu e-mail de administrador"
                 className="w-full pl-10 pr-4 py-2.5 bg-stone-950 border border-stone-800 focus:border-rose-500 rounded-xl text-xs sm:text-sm text-stone-100 placeholder-stone-600 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
               />
             </div>

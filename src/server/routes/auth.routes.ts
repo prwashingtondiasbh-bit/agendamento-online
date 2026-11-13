@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { db, memoryStore } from '../storage.js';
-import { getMySqlPool } from '../db/mysql.js';
+import { getMySqlPool, invalidateQueryCache } from '../db/mysql.js';
 import { customerStorage } from '../customerStorage.js';
 import { saasService } from '../saasService.js';
 import {
@@ -639,8 +639,22 @@ router.put('/change-password', authMiddleware, async (req, res, next) => {
     const pool = getMySqlPool();
     if (pool) {
       try {
-        await pool.execute(`UPDATE User SET passwordHash = ?, updatedAt = NOW() WHERE id = ?`, [newHash, user.id]);
-      } catch (e) {}
+        const [updateRes]: any = await pool.execute(
+          `UPDATE User SET passwordHash = ?, updatedAt = NOW() WHERE id = ? OR LOWER(email) = LOWER(?)`,
+          [newHash, user.id, user.email]
+        );
+        if (!updateRes || Number(updateRes.affectedRows || 0) === 0) {
+          await pool.execute(
+            `INSERT INTO User (id, name, email, passwordHash, active, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, 1, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE passwordHash = VALUES(passwordHash), updatedAt = NOW()`,
+            [user.id, user.name || 'Usuário', String(user.email).toLowerCase(), newHash]
+          );
+        }
+        invalidateQueryCache();
+      } catch (e) {
+        console.warn('[Auth ChangePassword MySQL Warning]:', e);
+      }
     }
 
     res.json({ success: true, message: 'Senha alterada com sucesso!' });

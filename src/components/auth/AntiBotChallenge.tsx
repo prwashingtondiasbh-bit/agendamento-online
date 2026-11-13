@@ -1,8 +1,36 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ShieldCheck, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ShieldCheck, RefreshCw, AlertTriangle } from 'lucide-react';
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: HTMLElement | string,
+        options: {
+          sitekey: string;
+          theme?: 'light' | 'dark' | 'auto';
+          language?: string;
+          size?: 'normal' | 'compact' | 'flexible';
+          callback?: (token: string) => void;
+          'expired-callback'?: () => void;
+          'error-callback'?: (errorCode?: string) => void;
+          'timeout-callback'?: () => void;
+        }
+      ) => string;
+      reset: (widgetId?: string) => void;
+      remove: (widgetId?: string) => void;
+    };
+  }
+}
+
+const TURNSTILE_SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+const TURNSTILE_SITE_KEY =
+  ((import.meta as any).env?.VITE_TURNSTILE_SITE_KEY as string | undefined)?.trim() ||
+  '0x4AAAAAAF-9lcvfQpiICFeY';
 
 export interface BotGuardPayload {
   website: string;
+  turnstileToken?: string;
   challengeToken: string;
   challengeAnswer: string;
   formRenderedAt: number;
@@ -19,45 +47,150 @@ export const AntiBotChallenge: React.FC<AntiBotChallengeProps> = ({
   theme = 'light',
   onChange,
 }) => {
-  const [question, setQuestion] = useState<string>('Carregando verificação...');
-  const [challengeToken, setChallengeToken] = useState<string>('');
-  const [challengeAnswer, setChallengeAnswer] = useState<string>('');
+  const [turnstileToken, setTurnstileToken] = useState<string>('');
   const [honeypot, setHoneypot] = useState<string>('');
-  const [formRenderedAt, setFormRenderedAt] = useState<number>(() => Date.now());
-  const [loading, setLoading] = useState<boolean>(false);
+  const [formRenderedAt] = useState<number>(() => Date.now());
+  const [status, setStatus] = useState<'loading' | 'ready' | 'verified' | 'error'>('loading');
 
-  const fetchChallenge = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/v1/auth/bot-challenge', { cache: 'no-store' });
-      const json = await res.json().catch(() => ({}));
-      if (json?.success && json?.data?.challengeToken) {
-        setChallengeToken(json.data.challengeToken);
-        setQuestion(json.data.question || 'Resolva a soma abaixo');
-        setChallengeAnswer('');
-        setFormRenderedAt(Date.now());
-      } else {
-        setQuestion('Erro ao carregar desafio');
-      }
-    } catch {
-      setQuestion('Verificação indisponível');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchChallenge();
-  }, [fetchChallenge, resetKey]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const widgetIdRef = useRef<string | null>(null);
+  const prevResetKeyRef = useRef<number>(resetKey);
 
   useEffect(() => {
     onChange({
       website: honeypot,
-      challengeToken,
-      challengeAnswer: challengeAnswer.trim(),
+      turnstileToken,
+      challengeToken: '',
+      challengeAnswer: '',
       formRenderedAt,
     });
-  }, [honeypot, challengeToken, challengeAnswer, formRenderedAt, onChange]);
+  }, [honeypot, turnstileToken, formRenderedAt, onChange]);
+
+  const ensureScriptTag = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const existing = document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]');
+    if (!existing) {
+      const script = document.createElement('script');
+      script.src = TURNSTILE_SCRIPT_SRC;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  }, []);
+
+  const renderWidget = useCallback(() => {
+    const el = containerRef.current;
+    if (!el || !window.turnstile?.render) return false;
+
+    if (widgetIdRef.current) {
+      try {
+        window.turnstile.remove(widgetIdRef.current);
+      } catch {
+        // ignore cleanup error
+      }
+      widgetIdRef.current = null;
+    }
+
+    el.innerHTML = '';
+    setTurnstileToken('');
+    setStatus('ready');
+
+    const widgetId = window.turnstile.render(el, {
+      sitekey: TURNSTILE_SITE_KEY,
+      theme: theme === 'dark' ? 'dark' : 'light',
+      language: 'pt-BR',
+      size: 'normal',
+      callback: (token: string) => {
+        setTurnstileToken(token);
+        setStatus('verified');
+      },
+      'expired-callback': () => {
+        setTurnstileToken('');
+        setStatus('ready');
+      },
+      'timeout-callback': () => {
+        setTurnstileToken('');
+        setStatus('ready');
+      },
+      'error-callback': () => {
+        setTurnstileToken('');
+        setStatus('error');
+      },
+    });
+
+    widgetIdRef.current = widgetId;
+    return true;
+  }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let pollTimer: number | undefined;
+
+    ensureScriptTag();
+
+    if (!renderWidget()) {
+      setStatus('loading');
+      let attempts = 0;
+      const maxAttempts = 100; // 10 seconds
+      pollTimer = window.setInterval(() => {
+        if (cancelled) return;
+        attempts += 1;
+        if (window.turnstile?.render) {
+          if (pollTimer) window.clearInterval(pollTimer);
+          renderWidget();
+        } else if (attempts >= maxAttempts) {
+          if (pollTimer) window.clearInterval(pollTimer);
+          setStatus('error');
+        }
+      }, 100);
+    }
+
+    return () => {
+      cancelled = true;
+      if (pollTimer) window.clearInterval(pollTimer);
+      if (widgetIdRef.current && window.turnstile?.remove) {
+        try {
+          window.turnstile.remove(widgetIdRef.current);
+        } catch {
+          // ignore
+        }
+        widgetIdRef.current = null;
+      }
+    };
+  }, [ensureScriptTag, renderWidget]);
+
+  useEffect(() => {
+    if (prevResetKeyRef.current === resetKey) return;
+    prevResetKeyRef.current = resetKey;
+    setTurnstileToken('');
+    if (widgetIdRef.current && window.turnstile?.reset) {
+      try {
+        setStatus('ready');
+        window.turnstile.reset(widgetIdRef.current);
+      } catch {
+        renderWidget();
+      }
+    } else {
+      renderWidget();
+    }
+  }, [resetKey, renderWidget]);
+
+  const handleManualReload = () => {
+    setTurnstileToken('');
+    if (widgetIdRef.current && window.turnstile?.reset) {
+      try {
+        setStatus('ready');
+        window.turnstile.reset(widgetIdRef.current);
+        return;
+      } catch {
+        // fallback to full re-render
+      }
+    }
+    ensureScriptTag();
+    if (!renderWidget()) {
+      setStatus('error');
+    }
+  };
 
   const isDark = theme === 'dark';
 
@@ -86,54 +219,55 @@ export const AntiBotChallenge: React.FC<AntiBotChallengeProps> = ({
         />
       </div>
 
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex items-center justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-1.5">
-          <ShieldCheck className={`w-4 h-4 shrink-0 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
+          <ShieldCheck
+            className={`w-4 h-4 shrink-0 ${
+              status === 'verified'
+                ? 'text-emerald-500'
+                : isDark
+                  ? 'text-stone-400'
+                  : 'text-emerald-600'
+            }`}
+          />
           <span className="text-[11px] font-bold uppercase tracking-wider">
-            Verificação Anti-Bot
+            Verificação de Segurança
           </span>
         </div>
         <button
           type="button"
-          onClick={fetchChallenge}
-          disabled={loading}
-          title="Gerar novo desafio"
+          onClick={handleManualReload}
+          title="Recarregar verificação Cloudflare Turnstile"
           className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-lg transition-colors ${
             isDark
               ? 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
               : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/70'
           }`}
         >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-          <span>Trocar</span>
+          <RefreshCw className={`w-3 h-3 ${status === 'loading' ? 'animate-spin' : ''}`} />
+          <span>Atualizar</span>
         </button>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div
-          className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold tabular-nums border ${
-            isDark
-              ? 'bg-stone-900 border-stone-800 text-stone-100'
-              : 'bg-white border-stone-200 text-stone-900'
-          }`}
-        >
-          {question}
-        </div>
-        <input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          required
-          aria-label="Resposta da verificação anti-bot"
-          value={challengeAnswer}
-          onChange={(e) => setChallengeAnswer(e.target.value.replace(/[^0-9-]/g, ''))}
-          placeholder="Resp."
-          className={`w-24 px-3 py-2 rounded-lg text-xs sm:text-sm font-bold text-center tabular-nums border focus:outline-none focus:ring-2 ${
-            isDark
-              ? 'bg-stone-900 border-stone-700 text-stone-100 placeholder-stone-500 focus:border-rose-500 focus:ring-rose-500/20'
-              : 'bg-white border-stone-300 text-stone-900 placeholder-stone-400 focus:border-rose-500 focus:ring-rose-500/20'
-          }`}
-        />
+      <div className="flex flex-col items-center justify-center min-h-[66px]">
+        <div ref={containerRef} className="cf-turnstile-container flex justify-center max-w-full overflow-x-auto" />
+        {status === 'loading' && (
+          <p className={`text-[11px] mt-1 ${isDark ? 'text-stone-400' : 'text-stone-500'}`}>
+            Carregando verificação Cloudflare Turnstile...
+          </p>
+        )}
+        {status === 'error' && (
+          <div
+            className={`mt-2 w-full rounded-lg px-2.5 py-1.5 text-[11px] flex items-center justify-center gap-1.5 ${
+              isDark
+                ? 'bg-amber-950/60 border border-amber-800/70 text-amber-300'
+                : 'bg-amber-50 border border-amber-200 text-amber-800'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>Não foi possível carregar o desafio. Clique em Atualizar.</span>
+          </div>
+        )}
       </div>
     </div>
   );

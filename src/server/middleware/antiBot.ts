@@ -348,6 +348,98 @@ export function clearFailedLoginAttempts(req: Request, email: string) {
   loginAttemptsByKey.delete(`${ip}:${cleanEmail}`);
 }
 
+export interface VerifyTurnstileResult {
+  valid: boolean;
+  code?: string;
+  error?: string;
+  errorCodes?: string[];
+}
+
+export async function verifyTurnstileToken(
+  token: string | undefined | null,
+  remoteIp?: string
+): Promise<VerifyTurnstileResult> {
+  pruneExpiredState();
+
+  const cleanToken = String(token ?? '').trim();
+  if (!cleanToken) {
+    return {
+      valid: false,
+      code: 'BOT_CHALLENGE_REQUIRED',
+      error: 'Complete a verificação de segurança (Cloudflare Turnstile) antes de enviar.',
+    };
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+  const replayKey = `ts:${tokenHash}`;
+  if (consumedChallengeNonces.has(replayKey)) {
+    return {
+      valid: false,
+      code: 'BOT_CHALLENGE_REPLAYED',
+      error: 'Esta verificação de segurança já foi utilizada. Aguarde a renovação e tente novamente.',
+    };
+  }
+
+  const secret = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
+  if (!secret) {
+    console.error('[AntiBot] TURNSTILE_SECRET_KEY não configurada no servidor.');
+    return {
+      valid: false,
+      code: 'TURNSTILE_NOT_CONFIGURED',
+      error: 'Verificação anti-bot não configurada no servidor.',
+    };
+  }
+
+  try {
+    const formData = new URLSearchParams();
+    formData.append('secret', secret);
+    formData.append('response', cleanToken);
+    if (remoteIp && remoteIp !== '127.0.0.1' && remoteIp !== '::1') {
+      formData.append('remoteip', remoteIp);
+    }
+
+    const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
+
+    if (!verifyRes.ok) {
+      return {
+        valid: false,
+        code: 'TURNSTILE_UNAVAILABLE',
+        error: 'Não foi possível validar o Cloudflare Turnstile no momento. Tente novamente.',
+      };
+    }
+
+    const data = (await verifyRes.json().catch(() => null)) as {
+      success?: boolean;
+      'error-codes'?: string[];
+    } | null;
+
+    if (!data?.success) {
+      return {
+        valid: false,
+        code: 'TURNSTILE_FAILED',
+        error: 'Falha na verificação de segurança (Cloudflare Turnstile). Atualize e tente novamente.',
+        errorCodes: Array.isArray(data?.['error-codes']) ? data['error-codes'] : undefined,
+      };
+    }
+
+    consumedChallengeNonces.set(replayKey, Date.now() + 5 * 60 * 1000);
+    return { valid: true };
+  } catch (err) {
+    console.error('[AntiBot] Erro ao consultar siteverify do Cloudflare Turnstile:', err);
+    return {
+      valid: false,
+      code: 'TURNSTILE_UNAVAILABLE',
+      error: 'Erro de comunicação ao validar o Cloudflare Turnstile. Tente novamente.',
+    };
+  }
+}
+
 export interface AntiBotMiddlewareOptions {
   mode: 'register' | 'login' | 'forgot_password';
 }
@@ -359,9 +451,19 @@ export function antiBotGuard(options: AntiBotMiddlewareOptions) {
     const ip = extractClientIp(req);
     const ua = String(req.headers['user-agent'] || '');
 
+    const turnstileToken =
+      botGuard.turnstileToken ?? body.turnstileToken ?? body['cf-turnstile-response'];
+    const challengeToken = botGuard.challengeToken ?? body.challengeToken;
+    const challengeAnswer = botGuard.challengeAnswer ?? body.challengeAnswer;
+
     const isTestMode = process.env.NODE_ENV === 'test' || process.env.AGENDA_TEST_MODE === '1';
-    const enforceStrictChallenge =
-      !isTestMode || req.headers['x-enforce-antibot'] === 'true' || Boolean(botGuard.challengeToken);
+    const enforceTurnstile =
+      !isTestMode || req.headers['x-enforce-turnstile'] === 'true' || Boolean(turnstileToken);
+    const enforceLegacyMath =
+      isTestMode &&
+      !enforceTurnstile &&
+      (req.headers['x-enforce-antibot'] === 'true' || Boolean(challengeToken));
+    const enforceStrictChallenge = enforceTurnstile || enforceLegacyMath;
 
     // 1. Check honeypot trap fields (always enforced, even in test mode)
     for (const field of HONEYPOT_FIELD_NAMES) {
@@ -383,7 +485,7 @@ export function antiBotGuard(options: AntiBotMiddlewareOptions) {
     }
 
     // 2. Check malicious/automated scanner User-Agent when strict mode active or outside default test fetch
-    if (!isTestMode || req.headers['x-enforce-antibot'] === 'true') {
+    if (!isTestMode || req.headers['x-enforce-antibot'] === 'true' || req.headers['x-enforce-turnstile'] === 'true') {
       if (!ua || SUSPICIOUS_BOT_UA_PATTERNS.some((re) => re.test(ua))) {
         await db.recordAuditLog(
           null,
@@ -449,11 +551,24 @@ export function antiBotGuard(options: AntiBotMiddlewareOptions) {
       }
     }
 
-    // 5. Verify signed Anti-Bot Challenge when required
-    const challengeToken = botGuard.challengeToken ?? body.challengeToken;
-    const challengeAnswer = botGuard.challengeAnswer ?? body.challengeAnswer;
-
-    if (enforceStrictChallenge) {
+    // 5. Verify Cloudflare Turnstile (or legacy signed challenge in test mode)
+    if (enforceTurnstile) {
+      const check = await verifyTurnstileToken(turnstileToken, ip);
+      if (!check.valid) {
+        await db.recordAuditLog(
+          null,
+          null,
+          'SECURITY_TURNSTILE_FAILED',
+          { path: req.originalUrl, code: check.code, errorCodes: check.errorCodes },
+          ip
+        ).catch(() => {});
+        return res.status(403).json({
+          success: false,
+          code: check.code || 'TURNSTILE_FAILED',
+          error: check.error || 'Falha na verificação de segurança (Cloudflare Turnstile).',
+        });
+      }
+    } else if (enforceLegacyMath) {
       const check = verifyBotChallenge(challengeToken, challengeAnswer, {
         enforceTiming: true,
         consumeNonce: true,
@@ -477,3 +592,4 @@ export function antiBotGuard(options: AntiBotMiddlewareOptions) {
     return next();
   };
 }
+

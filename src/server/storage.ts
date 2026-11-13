@@ -507,11 +507,16 @@ export const db = {
               String(c.email || '').toLowerCase() === cleanEmail ||
               String(c.notes || '').includes(`userId:${u.id}`)
           );
-          const resolvedRole =
-            u.role && String(u.role).trim() !== ''
-              ? u.role
-              : memUser?.role ||
-                (String(u.id).startsWith('user-cust-') || isInClients ? 'CUSTOMER' : 'OWNER');
+          const isMasterAccount =
+            u.id === 'user-master-1' ||
+            cleanEmail === 'prwashingtondiasbh@gmail.com' ||
+            Boolean(memUser?.isMasterAdmin);
+          const resolvedRole = isMasterAccount
+            ? 'SUPER_ADMIN'
+            : u.role && String(u.role).trim() !== ''
+            ? u.role
+            : memUser?.role ||
+              (String(u.id).startsWith('user-cust-') || isInClients ? 'CUSTOMER' : 'OWNER');
 
           const hydratedUser = {
             id: u.id,
@@ -521,7 +526,7 @@ export const db = {
             passwordHash: u.passwordHash,
             tenantId: u.tenantId || memUser?.tenantId || 'biz-1',
             role: resolvedRole,
-            isMasterAdmin: Boolean(memUser?.isMasterAdmin || resolvedRole === 'SUPER_ADMIN'),
+            isMasterAdmin: Boolean(isMasterAccount || resolvedRole === 'SUPER_ADMIN'),
             professionalId: memUser?.professionalId,
             resetToken: u.resetToken,
             resetExpires: u.resetExpires,
@@ -609,8 +614,21 @@ export const db = {
     const planMeta = saasService.getPlanMetadata(selectedPlan);
     const initialRequireDeposit = Boolean(planMeta.allowDeposit);
 
+    const nextBillingDate = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
+    const subHistory = [
+      {
+        timestamp: now.toISOString(),
+        actorId: userId,
+        action: 'SUBSCRIPTION_CREATED',
+        plan: selectedPlan,
+        contractedPriceCents: planMeta.defaultPriceCents,
+        status: 'ACTIVE',
+      },
+    ];
+
     const pool = getMySqlPool();
     if (pool) {
+      await saasService.ensureSaaSSchemaInMySql(pool);
       let conn: any = null;
       try {
         conn = await getConnectionWithRetry();
@@ -645,6 +663,24 @@ export const db = {
           `INSERT INTO TenantMember (id, tenantId, userId, role, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?)`,
           [`mem-${Date.now()}`, tenantId, userId, ownerRole, now, now]
+        );
+        await conn.execute(
+          `INSERT INTO Subscription (id, tenantId, plan, status, contractedPriceCents, billingCycle, startedAt, expiresAt, nextBillingAt, statusReason, updatedBy, history, createdAt, updatedAt)
+           VALUES (?, ?, ?, 'ACTIVE', ?, 'MONTHLY', ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            `sub-${tenantId}`,
+            tenantId,
+            selectedPlan,
+            planMeta.defaultPriceCents,
+            now,
+            nextBillingDate,
+            nextBillingDate,
+            'Assinatura inicial criada no cadastro do estabelecimento',
+            userId,
+            JSON.stringify(subHistory),
+            now,
+            now,
+          ]
         );
         await conn.commit();
       } catch (e) {

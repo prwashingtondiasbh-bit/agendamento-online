@@ -263,6 +263,90 @@ async function runFullStoreLifecycleAndSecurityTests() {
     assert.strictEqual(forgotReplay.status, 403, 'Reutilização de desafio anti-bot consumido deve falhar');
     assert.strictEqual(forgotReplay.body.code, 'BOT_CHALLENGE_REPLAYED');
 
+    // 1.7b Cloudflare Turnstile server-side siteverify enforcement (missing, invalid, valid, replay)
+    const originalFetch = globalThis.fetch;
+    const prevTurnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+    process.env.TURNSTILE_SECRET_KEY = 'test-turnstile-secret-key';
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === 'https://challenges.cloudflare.com/turnstile/v0/siteverify') {
+        const params = new URLSearchParams(String(init?.body || ''));
+        const token = params.get('response');
+        const secret = params.get('secret');
+        const isOk = secret === 'test-turnstile-secret-key' && token === 'cf-turnstile-valid-token';
+        return new Response(
+          JSON.stringify(
+            isOk
+              ? { success: true }
+              : { success: false, 'error-codes': ['invalid-input-response'] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return originalFetch(input, init);
+    }) as typeof fetch;
+
+    try {
+      const missingTurnstileRes = await jsonFetch('/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-enforce-turnstile': 'true' },
+        body: JSON.stringify({
+          email: `turnstile-missing-${suffix}@gmail.com`,
+          botGuard: { website: '', formRenderedAt: Date.now() - 1000 },
+        }),
+      });
+      assert.strictEqual(missingTurnstileRes.status, 403, 'Turnstile ausente deve bloquear com 403');
+      assert.strictEqual(missingTurnstileRes.body.code, 'BOT_CHALLENGE_REQUIRED');
+
+      const invalidTurnstileRes = await jsonFetch('/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-enforce-turnstile': 'true' },
+        body: JSON.stringify({
+          email: `turnstile-invalid-${suffix}@gmail.com`,
+          botGuard: {
+            website: '',
+            turnstileToken: 'cf-turnstile-bad-token',
+            formRenderedAt: Date.now() - 1000,
+          },
+        }),
+      });
+      assert.strictEqual(invalidTurnstileRes.status, 403, 'Token Turnstile inválido deve bloquear com 403');
+      assert.strictEqual(invalidTurnstileRes.body.code, 'TURNSTILE_FAILED');
+
+      const validTurnstileGuard = {
+        website: '',
+        turnstileToken: 'cf-turnstile-valid-token',
+        formRenderedAt: Date.now() - 1000,
+      };
+      const validTurnstileRes = await jsonFetch('/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-enforce-turnstile': 'true' },
+        body: JSON.stringify({
+          email: `turnstile-valid-${suffix}@gmail.com`,
+          botGuard: validTurnstileGuard,
+        }),
+      });
+      assert.strictEqual(validTurnstileRes.status, 200, 'Token Turnstile válido deve ser aceito');
+
+      const replayTurnstileRes = await jsonFetch('/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-enforce-turnstile': 'true' },
+        body: JSON.stringify({
+          email: `turnstile-replay-${suffix}@gmail.com`,
+          botGuard: validTurnstileGuard,
+        }),
+      });
+      assert.strictEqual(replayTurnstileRes.status, 403, 'Reutilização de token Turnstile deve bloquear com 403');
+      assert.strictEqual(replayTurnstileRes.body.code, 'BOT_CHALLENGE_REPLAYED');
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (prevTurnstileSecret === undefined) {
+        delete process.env.TURNSTILE_SECRET_KEY;
+      } else {
+        process.env.TURNSTILE_SECRET_KEY = prevTurnstileSecret;
+      }
+    }
+
     // 1.8 Forged unsigned Base64 session token rejected when signature verification is enforced
     const forgedToken = Buffer.from(
       JSON.stringify({

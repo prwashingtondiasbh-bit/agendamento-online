@@ -62,8 +62,177 @@ export function slugifyBusinessName(name: string, suffix?: string): string {
 
 let lastFullSyncTimestamp = 0;
 let syncInFlightPromise: Promise<void> | null = null;
+let saasSchemaEnsured = false;
+let saasSchemaPromise: Promise<void> | null = null;
+
+function toMySqlDateOrNull(val: unknown): Date | null {
+  if (!val) return null;
+  const d = val instanceof Date ? val : new Date(String(val));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 export const saasService = {
+  async ensureSaaSSchemaInMySql(poolOverride?: any): Promise<void> {
+    if (saasSchemaEnsured) return;
+    if (saasSchemaPromise) return saasSchemaPromise;
+
+    const pool = poolOverride || getMySqlPool();
+    if (!pool) return;
+
+    saasSchemaPromise = (async () => {
+      try {
+        const [subColRows]: any = await pool.query(`SHOW COLUMNS FROM Subscription`);
+        const subCols = new Map<string, any>(
+          (Array.isArray(subColRows) ? subColRows : []).map((c: any) => [String(c.Field), c])
+        );
+
+        const planCol = subCols.get('plan');
+        if (planCol && String(planCol.Type || '').toLowerCase().includes('enum') && !String(planCol.Type || '').toUpperCase().includes('COMPLETE')) {
+          await pool.execute(`ALTER TABLE Subscription MODIFY COLUMN plan VARCHAR(32) NOT NULL DEFAULT 'COMPLETE'`);
+        }
+
+        const statusCol = subCols.get('status');
+        if (statusCol && String(statusCol.Type || '').toLowerCase().includes('enum') && !String(statusCol.Type || '').toUpperCase().includes('BLOCKED')) {
+          await pool.execute(`ALTER TABLE Subscription MODIFY COLUMN status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE'`);
+        }
+
+        const missingSubColumns: Array<[string, string]> = [
+          ['contractedPriceCents', 'INT NOT NULL DEFAULT 9990'],
+          ['priceOverrideReason', 'TEXT NULL'],
+          ['billingCycle', "VARCHAR(20) NOT NULL DEFAULT 'MONTHLY'"],
+          ['startedAt', 'DATETIME NULL'],
+          ['nextBillingAt', 'DATETIME NULL'],
+          ['cancelledAt', 'DATETIME NULL'],
+          ['statusReason', 'TEXT NULL'],
+          ['updatedBy', 'VARCHAR(100) NULL'],
+          ['history', 'LONGTEXT NULL'],
+        ];
+        for (const [colName, colDef] of missingSubColumns) {
+          if (!subCols.has(colName)) {
+            await pool.execute(`ALTER TABLE Subscription ADD COLUMN ${colName} ${colDef}`);
+          }
+        }
+
+        const [tenColRows]: any = await pool.query(`SHOW COLUMNS FROM Tenant`);
+        const tenCols = new Set<string>(
+          (Array.isArray(tenColRows) ? tenColRows : []).map((c: any) => String(c.Field))
+        );
+        const missingTenantColumns: Array<[string, string]> = [
+          ['status', "VARCHAR(32) NOT NULL DEFAULT 'ACTIVE'"],
+          ['blockedReason', 'TEXT NULL'],
+          ['blockedAt', 'DATETIME NULL'],
+          ['blockedBy', 'VARCHAR(100) NULL'],
+          ['cancelledAt', 'DATETIME NULL'],
+          ['cancelledReason', 'TEXT NULL'],
+        ];
+        for (const [colName, colDef] of missingTenantColumns) {
+          if (!tenCols.has(colName)) {
+            await pool.execute(`ALTER TABLE Tenant ADD COLUMN ${colName} ${colDef}`);
+          }
+        }
+
+        // Ensure Super Admin user exists in MySQL User table so password changes persist across restarts
+        const [masterRows]: any = await pool.query(
+          `SELECT id, email FROM User WHERE id = 'user-master-1' OR LOWER(email) IN ('prwashingtondiasbh@gmail.com', 'master@agendabeauty.com.br') LIMIT 1`
+        );
+        if (!Array.isArray(masterRows) || masterRows.length === 0) {
+          const memMaster = (memoryStore.users as any[]).find(
+            (u) => u.id === 'user-master-1' || String(u.email || '').toLowerCase() === 'prwashingtondiasbh@gmail.com'
+          );
+          const masterHash = memMaster?.passwordHash || bcrypt.hashSync('123456', 10);
+          await pool.execute(
+            `INSERT INTO User (id, name, email, passwordHash, active, createdAt, updatedAt)
+             VALUES ('user-master-1', 'Master Admin SaaS', 'prwashingtondiasbh@gmail.com', ?, 1, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE email = VALUES(email)`,
+            [masterHash]
+          );
+        } else if (String(masterRows[0].email || '').toLowerCase() === 'master@agendabeauty.com.br') {
+          await pool.execute(
+            `UPDATE User SET email = 'prwashingtondiasbh@gmail.com', updatedAt = NOW() WHERE id = ?`,
+            [masterRows[0].id]
+          );
+        }
+
+        saasSchemaEnsured = true;
+      } finally {
+        saasSchemaPromise = null;
+      }
+    })();
+
+    return saasSchemaPromise;
+  },
+
+  async upsertSubscriptionInMySql(pool: any, rawSub: any): Promise<void> {
+    await this.ensureSaaSSchemaInMySql(pool);
+    const planCode = normalizePlanCode(rawSub.plan);
+    const subStatus = normalizeSubscriptionStatus(rawSub.status);
+    const contractedPriceCents = Math.round(Number(rawSub.contractedPriceCents ?? 9990));
+    const historyJson = JSON.stringify(Array.isArray(rawSub.history) ? rawSub.history : []);
+
+    const [existingRows]: any = await pool.query(
+      `SELECT id FROM Subscription WHERE tenantId = ? LIMIT 1`,
+      [rawSub.tenantId]
+    );
+
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      await pool.execute(
+        `UPDATE Subscription
+         SET plan = ?,
+             status = ?,
+             contractedPriceCents = ?,
+             priceOverrideReason = ?,
+             billingCycle = ?,
+             startedAt = COALESCE(startedAt, ?),
+             expiresAt = ?,
+             nextBillingAt = ?,
+             cancelledAt = ?,
+             statusReason = ?,
+             updatedBy = ?,
+             history = ?,
+             updatedAt = NOW()
+         WHERE tenantId = ?`,
+        [
+          planCode,
+          subStatus,
+          contractedPriceCents,
+          rawSub.priceOverrideReason || null,
+          rawSub.billingCycle || 'MONTHLY',
+          toMySqlDateOrNull(rawSub.startedAt) || new Date(),
+          toMySqlDateOrNull(rawSub.expiresAt),
+          toMySqlDateOrNull(rawSub.nextBillingAt),
+          toMySqlDateOrNull(rawSub.cancelledAt),
+          rawSub.statusReason || null,
+          rawSub.updatedBy || 'system',
+          historyJson,
+          rawSub.tenantId,
+        ]
+      );
+    } else {
+      await pool.execute(
+        `INSERT INTO Subscription
+           (id, tenantId, plan, status, contractedPriceCents, priceOverrideReason, billingCycle, startedAt, expiresAt, nextBillingAt, cancelledAt, statusReason, updatedBy, history, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          rawSub.id || `sub-${rawSub.tenantId}`,
+          rawSub.tenantId,
+          planCode,
+          subStatus,
+          contractedPriceCents,
+          rawSub.priceOverrideReason || null,
+          rawSub.billingCycle || 'MONTHLY',
+          toMySqlDateOrNull(rawSub.startedAt) || new Date(),
+          toMySqlDateOrNull(rawSub.expiresAt),
+          toMySqlDateOrNull(rawSub.nextBillingAt),
+          toMySqlDateOrNull(rawSub.cancelledAt),
+          rawSub.statusReason || null,
+          rawSub.updatedBy || 'system',
+          historyJson,
+        ]
+      );
+    }
+    invalidateQueryCache();
+  },
+
   ensureSaaSSeedData() {
     const store = memoryStore as any;
 
@@ -746,10 +915,7 @@ export const saasService = {
     const pool = getMySqlPool();
     if (pool) {
       try {
-        await pool.execute(
-          `UPDATE Subscription SET plan = ?, contractedPriceCents = ?, updatedBy = ?, history = ?, updatedAt = NOW() WHERE tenantId = ?`,
-          [targetPlan, nextPriceCents, params.actorId, JSON.stringify(rawSub.history), params.tenantId]
-        );
+        await this.upsertSubscriptionInMySql(pool, rawSub);
         if (targetPlan === 'SIMPLE') {
           await pool.execute(`UPDATE Tenant SET requireDeposit = 0, updatedAt = NOW() WHERE id = ?`, [params.tenantId]);
         }
@@ -820,10 +986,7 @@ export const saasService = {
     const pool = getMySqlPool();
     if (pool) {
       try {
-        await pool.execute(
-          `UPDATE Subscription SET contractedPriceCents = ?, updatedBy = ?, history = ?, updatedAt = NOW() WHERE tenantId = ?`,
-          [priceCents, params.actorId, JSON.stringify(rawSub.history), params.tenantId]
-        );
+        await this.upsertSubscriptionInMySql(pool, rawSub);
       } catch (e) {
         handleDbFallbackError('updateTenantContractedPrice', e);
       }
@@ -921,6 +1084,7 @@ export const saasService = {
     const pool = getMySqlPool();
     if (pool) {
       try {
+        await this.ensureSaaSSchemaInMySql(pool);
         await pool.execute(
           `UPDATE Tenant SET status = ?, blockedReason = ?, blockedAt = ?, blockedBy = ?, cancelledAt = ?, cancelledReason = ?, updatedAt = NOW() WHERE id = ?`,
           [
@@ -933,19 +1097,7 @@ export const saasService = {
             params.tenantId,
           ]
         );
-        await pool.execute(
-          `UPDATE Subscription SET status = ?, statusReason = ?, nextBillingAt = ?, expiresAt = ?, cancelledAt = ?, updatedBy = ?, history = ?, updatedAt = NOW() WHERE tenantId = ?`,
-          [
-            nextSubStatus,
-            rawSub.statusReason,
-            rawSub.nextBillingAt ? new Date(rawSub.nextBillingAt) : null,
-            rawSub.expiresAt ? new Date(rawSub.expiresAt) : null,
-            rawSub.cancelledAt ? new Date(rawSub.cancelledAt) : null,
-            params.actorId,
-            JSON.stringify(rawSub.history),
-            params.tenantId,
-          ]
-        );
+        await this.upsertSubscriptionInMySql(pool, rawSub);
       } catch (e) {
         handleDbFallbackError('updateTenantSubscriptionAndAccessStatus', e);
       }
@@ -1149,6 +1301,7 @@ export const saasService = {
     syncInFlightPromise = (async () => {
       const store = memoryStore as any;
       try {
+        await this.ensureSaaSSchemaInMySql(pool).catch(() => {});
         const [
           [rows],
           [subRows],
@@ -1238,14 +1391,23 @@ export const saasService = {
                 : Array.isArray(sr.history)
                 ? sr.history
                 : [];
+            const normalizedSubData = {
+              ...sr,
+              plan: normalizePlanCode(sr.plan),
+              status: normalizeSubscriptionStatus(sr.status),
+              contractedPriceCents: Number(sr.contractedPriceCents ?? existingSub?.contractedPriceCents ?? 9990),
+              startedAt: sr.startedAt instanceof Date ? sr.startedAt.toISOString() : sr.startedAt || existingSub?.startedAt || null,
+              expiresAt: sr.expiresAt instanceof Date ? sr.expiresAt.toISOString() : sr.expiresAt || existingSub?.expiresAt || null,
+              nextBillingAt: sr.nextBillingAt instanceof Date ? sr.nextBillingAt.toISOString() : sr.nextBillingAt || existingSub?.nextBillingAt || null,
+              cancelledAt: sr.cancelledAt instanceof Date ? sr.cancelledAt.toISOString() : sr.cancelledAt || null,
+              createdAt: sr.createdAt instanceof Date ? sr.createdAt.toISOString() : sr.createdAt || existingSub?.createdAt,
+              updatedAt: sr.updatedAt instanceof Date ? sr.updatedAt.toISOString() : sr.updatedAt || existingSub?.updatedAt,
+              history: parsedHistory,
+            };
             if (existingSub) {
-              Object.assign(existingSub, {
-                ...sr,
-                plan: normalizePlanCode(sr.plan),
-                status: normalizeSubscriptionStatus(sr.status),
-                contractedPriceCents: Number(sr.contractedPriceCents ?? existingSub.contractedPriceCents ?? 9990),
-                history: parsedHistory,
-              });
+              Object.assign(existingSub, normalizedSubData);
+            } else {
+              store.subscriptions.push(normalizedSubData);
             }
           }
         }

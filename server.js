@@ -50476,7 +50476,8 @@ var init_storage = __esm({
               const isInClients = memoryStore.clients.some(
                 (c) => c.userId === u.id || String(c.email || "").toLowerCase() === cleanEmail || String(c.notes || "").includes(`userId:${u.id}`)
               );
-              const resolvedRole = u.role && String(u.role).trim() !== "" ? u.role : memUser?.role || (String(u.id).startsWith("user-cust-") || isInClients ? "CUSTOMER" : "OWNER");
+              const isMasterAccount = u.id === "user-master-1" || cleanEmail === "prwashingtondiasbh@gmail.com" || Boolean(memUser?.isMasterAdmin);
+              const resolvedRole = isMasterAccount ? "SUPER_ADMIN" : u.role && String(u.role).trim() !== "" ? u.role : memUser?.role || (String(u.id).startsWith("user-cust-") || isInClients ? "CUSTOMER" : "OWNER");
               const hydratedUser = {
                 id: u.id,
                 name: u.name,
@@ -50485,7 +50486,7 @@ var init_storage = __esm({
                 passwordHash: u.passwordHash,
                 tenantId: u.tenantId || memUser?.tenantId || "biz-1",
                 role: resolvedRole,
-                isMasterAdmin: Boolean(memUser?.isMasterAdmin || resolvedRole === "SUPER_ADMIN"),
+                isMasterAdmin: Boolean(isMasterAccount || resolvedRole === "SUPER_ADMIN"),
                 professionalId: memUser?.professionalId,
                 resetToken: u.resetToken,
                 resetExpires: u.resetExpires,
@@ -50539,8 +50540,20 @@ var init_storage = __esm({
         const selectedPlan = data.plan === "SIMPLE" ? "SIMPLE" : "COMPLETE";
         const planMeta = saasService.getPlanMetadata(selectedPlan);
         const initialRequireDeposit = Boolean(planMeta.allowDeposit);
+        const nextBillingDate = new Date(now.getTime() + 30 * 24 * 3600 * 1e3);
+        const subHistory = [
+          {
+            timestamp: now.toISOString(),
+            actorId: userId,
+            action: "SUBSCRIPTION_CREATED",
+            plan: selectedPlan,
+            contractedPriceCents: planMeta.defaultPriceCents,
+            status: "ACTIVE"
+          }
+        ];
         const pool2 = getMySqlPool();
         if (pool2) {
+          await saasService.ensureSaaSSchemaInMySql(pool2);
           let conn = null;
           try {
             conn = await getConnectionWithRetry();
@@ -50575,6 +50588,24 @@ var init_storage = __esm({
               `INSERT INTO TenantMember (id, tenantId, userId, role, createdAt, updatedAt)
            VALUES (?, ?, ?, ?, ?, ?)`,
               [`mem-${Date.now()}`, tenantId, userId, ownerRole, now, now]
+            );
+            await conn.execute(
+              `INSERT INTO Subscription (id, tenantId, plan, status, contractedPriceCents, billingCycle, startedAt, expiresAt, nextBillingAt, statusReason, updatedBy, history, createdAt, updatedAt)
+           VALUES (?, ?, ?, 'ACTIVE', ?, 'MONTHLY', ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                `sub-${tenantId}`,
+                tenantId,
+                selectedPlan,
+                planMeta.defaultPriceCents,
+                now,
+                nextBillingDate,
+                nextBillingDate,
+                "Assinatura inicial criada no cadastro do estabelecimento",
+                userId,
+                JSON.stringify(subHistory),
+                now,
+                now
+              ]
             );
             await conn.commit();
           } catch (e) {
@@ -53308,7 +53339,12 @@ function slugifyBusinessName(name, suffix) {
   const base = String(name || "estabelecimento").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").substring(0, 60) || "estabelecimento";
   return suffix ? `${base}-${suffix}` : base;
 }
-var lastFullSyncTimestamp, syncInFlightPromise, saasService;
+function toMySqlDateOrNull(val) {
+  if (!val) return null;
+  const d = val instanceof Date ? val : new Date(String(val));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+var lastFullSyncTimestamp, syncInFlightPromise, saasSchemaEnsured, saasSchemaPromise, saasService;
 var init_saasService = __esm({
   "src/server/saasService.ts"() {
     init_bcryptjs();
@@ -53316,7 +53352,156 @@ var init_saasService = __esm({
     init_storage();
     lastFullSyncTimestamp = 0;
     syncInFlightPromise = null;
+    saasSchemaEnsured = false;
+    saasSchemaPromise = null;
     saasService = {
+      async ensureSaaSSchemaInMySql(poolOverride) {
+        if (saasSchemaEnsured) return;
+        if (saasSchemaPromise) return saasSchemaPromise;
+        const pool2 = poolOverride || getMySqlPool();
+        if (!pool2) return;
+        saasSchemaPromise = (async () => {
+          try {
+            const [subColRows] = await pool2.query(`SHOW COLUMNS FROM Subscription`);
+            const subCols = new Map(
+              (Array.isArray(subColRows) ? subColRows : []).map((c) => [String(c.Field), c])
+            );
+            const planCol = subCols.get("plan");
+            if (planCol && String(planCol.Type || "").toLowerCase().includes("enum") && !String(planCol.Type || "").toUpperCase().includes("COMPLETE")) {
+              await pool2.execute(`ALTER TABLE Subscription MODIFY COLUMN plan VARCHAR(32) NOT NULL DEFAULT 'COMPLETE'`);
+            }
+            const statusCol = subCols.get("status");
+            if (statusCol && String(statusCol.Type || "").toLowerCase().includes("enum") && !String(statusCol.Type || "").toUpperCase().includes("BLOCKED")) {
+              await pool2.execute(`ALTER TABLE Subscription MODIFY COLUMN status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE'`);
+            }
+            const missingSubColumns = [
+              ["contractedPriceCents", "INT NOT NULL DEFAULT 9990"],
+              ["priceOverrideReason", "TEXT NULL"],
+              ["billingCycle", "VARCHAR(20) NOT NULL DEFAULT 'MONTHLY'"],
+              ["startedAt", "DATETIME NULL"],
+              ["nextBillingAt", "DATETIME NULL"],
+              ["cancelledAt", "DATETIME NULL"],
+              ["statusReason", "TEXT NULL"],
+              ["updatedBy", "VARCHAR(100) NULL"],
+              ["history", "LONGTEXT NULL"]
+            ];
+            for (const [colName, colDef] of missingSubColumns) {
+              if (!subCols.has(colName)) {
+                await pool2.execute(`ALTER TABLE Subscription ADD COLUMN ${colName} ${colDef}`);
+              }
+            }
+            const [tenColRows] = await pool2.query(`SHOW COLUMNS FROM Tenant`);
+            const tenCols = new Set(
+              (Array.isArray(tenColRows) ? tenColRows : []).map((c) => String(c.Field))
+            );
+            const missingTenantColumns = [
+              ["status", "VARCHAR(32) NOT NULL DEFAULT 'ACTIVE'"],
+              ["blockedReason", "TEXT NULL"],
+              ["blockedAt", "DATETIME NULL"],
+              ["blockedBy", "VARCHAR(100) NULL"],
+              ["cancelledAt", "DATETIME NULL"],
+              ["cancelledReason", "TEXT NULL"]
+            ];
+            for (const [colName, colDef] of missingTenantColumns) {
+              if (!tenCols.has(colName)) {
+                await pool2.execute(`ALTER TABLE Tenant ADD COLUMN ${colName} ${colDef}`);
+              }
+            }
+            const [masterRows] = await pool2.query(
+              `SELECT id, email FROM User WHERE id = 'user-master-1' OR LOWER(email) IN ('prwashingtondiasbh@gmail.com', 'master@agendabeauty.com.br') LIMIT 1`
+            );
+            if (!Array.isArray(masterRows) || masterRows.length === 0) {
+              const memMaster = memoryStore.users.find(
+                (u) => u.id === "user-master-1" || String(u.email || "").toLowerCase() === "prwashingtondiasbh@gmail.com"
+              );
+              const masterHash = memMaster?.passwordHash || bcryptjs_default.hashSync("123456", 10);
+              await pool2.execute(
+                `INSERT INTO User (id, name, email, passwordHash, active, createdAt, updatedAt)
+             VALUES ('user-master-1', 'Master Admin SaaS', 'prwashingtondiasbh@gmail.com', ?, 1, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE email = VALUES(email)`,
+                [masterHash]
+              );
+            } else if (String(masterRows[0].email || "").toLowerCase() === "master@agendabeauty.com.br") {
+              await pool2.execute(
+                `UPDATE User SET email = 'prwashingtondiasbh@gmail.com', updatedAt = NOW() WHERE id = ?`,
+                [masterRows[0].id]
+              );
+            }
+            saasSchemaEnsured = true;
+          } finally {
+            saasSchemaPromise = null;
+          }
+        })();
+        return saasSchemaPromise;
+      },
+      async upsertSubscriptionInMySql(pool2, rawSub) {
+        await this.ensureSaaSSchemaInMySql(pool2);
+        const planCode = normalizePlanCode(rawSub.plan);
+        const subStatus = normalizeSubscriptionStatus(rawSub.status);
+        const contractedPriceCents = Math.round(Number(rawSub.contractedPriceCents ?? 9990));
+        const historyJson = JSON.stringify(Array.isArray(rawSub.history) ? rawSub.history : []);
+        const [existingRows] = await pool2.query(
+          `SELECT id FROM Subscription WHERE tenantId = ? LIMIT 1`,
+          [rawSub.tenantId]
+        );
+        if (Array.isArray(existingRows) && existingRows.length > 0) {
+          await pool2.execute(
+            `UPDATE Subscription
+         SET plan = ?,
+             status = ?,
+             contractedPriceCents = ?,
+             priceOverrideReason = ?,
+             billingCycle = ?,
+             startedAt = COALESCE(startedAt, ?),
+             expiresAt = ?,
+             nextBillingAt = ?,
+             cancelledAt = ?,
+             statusReason = ?,
+             updatedBy = ?,
+             history = ?,
+             updatedAt = NOW()
+         WHERE tenantId = ?`,
+            [
+              planCode,
+              subStatus,
+              contractedPriceCents,
+              rawSub.priceOverrideReason || null,
+              rawSub.billingCycle || "MONTHLY",
+              toMySqlDateOrNull(rawSub.startedAt) || /* @__PURE__ */ new Date(),
+              toMySqlDateOrNull(rawSub.expiresAt),
+              toMySqlDateOrNull(rawSub.nextBillingAt),
+              toMySqlDateOrNull(rawSub.cancelledAt),
+              rawSub.statusReason || null,
+              rawSub.updatedBy || "system",
+              historyJson,
+              rawSub.tenantId
+            ]
+          );
+        } else {
+          await pool2.execute(
+            `INSERT INTO Subscription
+           (id, tenantId, plan, status, contractedPriceCents, priceOverrideReason, billingCycle, startedAt, expiresAt, nextBillingAt, cancelledAt, statusReason, updatedBy, history, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+            [
+              rawSub.id || `sub-${rawSub.tenantId}`,
+              rawSub.tenantId,
+              planCode,
+              subStatus,
+              contractedPriceCents,
+              rawSub.priceOverrideReason || null,
+              rawSub.billingCycle || "MONTHLY",
+              toMySqlDateOrNull(rawSub.startedAt) || /* @__PURE__ */ new Date(),
+              toMySqlDateOrNull(rawSub.expiresAt),
+              toMySqlDateOrNull(rawSub.nextBillingAt),
+              toMySqlDateOrNull(rawSub.cancelledAt),
+              rawSub.statusReason || null,
+              rawSub.updatedBy || "system",
+              historyJson
+            ]
+          );
+        }
+        invalidateQueryCache();
+      },
       ensureSaaSSeedData() {
         const store = memoryStore;
         if (!Array.isArray(store.saasPlanCatalog) || store.saasPlanCatalog.length === 0) {
@@ -53891,10 +54076,7 @@ var init_saasService = __esm({
         const pool2 = getMySqlPool();
         if (pool2) {
           try {
-            await pool2.execute(
-              `UPDATE Subscription SET plan = ?, contractedPriceCents = ?, updatedBy = ?, history = ?, updatedAt = NOW() WHERE tenantId = ?`,
-              [targetPlan, nextPriceCents, params.actorId, JSON.stringify(rawSub.history), params.tenantId]
-            );
+            await this.upsertSubscriptionInMySql(pool2, rawSub);
             if (targetPlan === "SIMPLE") {
               await pool2.execute(`UPDATE Tenant SET requireDeposit = 0, updatedAt = NOW() WHERE id = ?`, [params.tenantId]);
             }
@@ -53953,10 +54135,7 @@ var init_saasService = __esm({
         const pool2 = getMySqlPool();
         if (pool2) {
           try {
-            await pool2.execute(
-              `UPDATE Subscription SET contractedPriceCents = ?, updatedBy = ?, history = ?, updatedAt = NOW() WHERE tenantId = ?`,
-              [priceCents, params.actorId, JSON.stringify(rawSub.history), params.tenantId]
-            );
+            await this.upsertSubscriptionInMySql(pool2, rawSub);
           } catch (e) {
             handleDbFallbackError("updateTenantContractedPrice", e);
           }
@@ -54035,6 +54214,7 @@ var init_saasService = __esm({
         const pool2 = getMySqlPool();
         if (pool2) {
           try {
+            await this.ensureSaaSSchemaInMySql(pool2);
             await pool2.execute(
               `UPDATE Tenant SET status = ?, blockedReason = ?, blockedAt = ?, blockedBy = ?, cancelledAt = ?, cancelledReason = ?, updatedAt = NOW() WHERE id = ?`,
               [
@@ -54047,19 +54227,7 @@ var init_saasService = __esm({
                 params.tenantId
               ]
             );
-            await pool2.execute(
-              `UPDATE Subscription SET status = ?, statusReason = ?, nextBillingAt = ?, expiresAt = ?, cancelledAt = ?, updatedBy = ?, history = ?, updatedAt = NOW() WHERE tenantId = ?`,
-              [
-                nextSubStatus,
-                rawSub.statusReason,
-                rawSub.nextBillingAt ? new Date(rawSub.nextBillingAt) : null,
-                rawSub.expiresAt ? new Date(rawSub.expiresAt) : null,
-                rawSub.cancelledAt ? new Date(rawSub.cancelledAt) : null,
-                params.actorId,
-                JSON.stringify(rawSub.history),
-                params.tenantId
-              ]
-            );
+            await this.upsertSubscriptionInMySql(pool2, rawSub);
           } catch (e) {
             handleDbFallbackError("updateTenantSubscriptionAndAccessStatus", e);
           }
@@ -54219,6 +54387,8 @@ var init_saasService = __esm({
         syncInFlightPromise = (async () => {
           const store = memoryStore;
           try {
+            await this.ensureSaaSSchemaInMySql(pool2).catch(() => {
+            });
             const [
               [rows],
               [subRows],
@@ -54288,14 +54458,23 @@ var init_saasService = __esm({
                     return [];
                   }
                 })() : Array.isArray(sr.history) ? sr.history : [];
+                const normalizedSubData = {
+                  ...sr,
+                  plan: normalizePlanCode(sr.plan),
+                  status: normalizeSubscriptionStatus(sr.status),
+                  contractedPriceCents: Number(sr.contractedPriceCents ?? existingSub?.contractedPriceCents ?? 9990),
+                  startedAt: sr.startedAt instanceof Date ? sr.startedAt.toISOString() : sr.startedAt || existingSub?.startedAt || null,
+                  expiresAt: sr.expiresAt instanceof Date ? sr.expiresAt.toISOString() : sr.expiresAt || existingSub?.expiresAt || null,
+                  nextBillingAt: sr.nextBillingAt instanceof Date ? sr.nextBillingAt.toISOString() : sr.nextBillingAt || existingSub?.nextBillingAt || null,
+                  cancelledAt: sr.cancelledAt instanceof Date ? sr.cancelledAt.toISOString() : sr.cancelledAt || null,
+                  createdAt: sr.createdAt instanceof Date ? sr.createdAt.toISOString() : sr.createdAt || existingSub?.createdAt,
+                  updatedAt: sr.updatedAt instanceof Date ? sr.updatedAt.toISOString() : sr.updatedAt || existingSub?.updatedAt,
+                  history: parsedHistory
+                };
                 if (existingSub) {
-                  Object.assign(existingSub, {
-                    ...sr,
-                    plan: normalizePlanCode(sr.plan),
-                    status: normalizeSubscriptionStatus(sr.status),
-                    contractedPriceCents: Number(sr.contractedPriceCents ?? existingSub.contractedPriceCents ?? 9990),
-                    history: parsedHistory
-                  });
+                  Object.assign(existingSub, normalizedSubData);
+                } else {
+                  store.subscriptions.push(normalizedSubData);
                 }
               }
             }
@@ -84151,14 +84330,88 @@ function clearFailedLoginAttempts(req, email3) {
   const cleanEmail = String(email3 || "").trim().toLowerCase();
   loginAttemptsByKey.delete(`${ip}:${cleanEmail}`);
 }
+async function verifyTurnstileToken(token, remoteIp) {
+  pruneExpiredState();
+  const cleanToken = String(token ?? "").trim();
+  if (!cleanToken) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_REQUIRED",
+      error: "Complete a verifica\xE7\xE3o de seguran\xE7a (Cloudflare Turnstile) antes de enviar."
+    };
+  }
+  const tokenHash = crypto2.createHash("sha256").update(cleanToken).digest("hex");
+  const replayKey = `ts:${tokenHash}`;
+  if (consumedChallengeNonces.has(replayKey)) {
+    return {
+      valid: false,
+      code: "BOT_CHALLENGE_REPLAYED",
+      error: "Esta verifica\xE7\xE3o de seguran\xE7a j\xE1 foi utilizada. Aguarde a renova\xE7\xE3o e tente novamente."
+    };
+  }
+  const secret = String(process.env.TURNSTILE_SECRET_KEY || "").trim();
+  if (!secret) {
+    console.error("[AntiBot] TURNSTILE_SECRET_KEY n\xE3o configurada no servidor.");
+    return {
+      valid: false,
+      code: "TURNSTILE_NOT_CONFIGURED",
+      error: "Verifica\xE7\xE3o anti-bot n\xE3o configurada no servidor."
+    };
+  }
+  try {
+    const formData = new URLSearchParams();
+    formData.append("secret", secret);
+    formData.append("response", cleanToken);
+    if (remoteIp && remoteIp !== "127.0.0.1" && remoteIp !== "::1") {
+      formData.append("remoteip", remoteIp);
+    }
+    const verifyRes = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: formData.toString()
+    });
+    if (!verifyRes.ok) {
+      return {
+        valid: false,
+        code: "TURNSTILE_UNAVAILABLE",
+        error: "N\xE3o foi poss\xEDvel validar o Cloudflare Turnstile no momento. Tente novamente."
+      };
+    }
+    const data = await verifyRes.json().catch(() => null);
+    if (!data?.success) {
+      return {
+        valid: false,
+        code: "TURNSTILE_FAILED",
+        error: "Falha na verifica\xE7\xE3o de seguran\xE7a (Cloudflare Turnstile). Atualize e tente novamente.",
+        errorCodes: Array.isArray(data?.["error-codes"]) ? data["error-codes"] : void 0
+      };
+    }
+    consumedChallengeNonces.set(replayKey, Date.now() + 5 * 60 * 1e3);
+    return { valid: true };
+  } catch (err) {
+    console.error("[AntiBot] Erro ao consultar siteverify do Cloudflare Turnstile:", err);
+    return {
+      valid: false,
+      code: "TURNSTILE_UNAVAILABLE",
+      error: "Erro de comunica\xE7\xE3o ao validar o Cloudflare Turnstile. Tente novamente."
+    };
+  }
+}
 function antiBotGuard(options) {
   return async (req, res, next) => {
     const body = req.body || {};
     const botGuard = typeof body.botGuard === "object" && body.botGuard !== null ? body.botGuard : {};
     const ip = extractClientIp(req);
     const ua = String(req.headers["user-agent"] || "");
+    const turnstileToken = botGuard.turnstileToken ?? body.turnstileToken ?? body["cf-turnstile-response"];
+    const challengeToken = botGuard.challengeToken ?? body.challengeToken;
+    const challengeAnswer = botGuard.challengeAnswer ?? body.challengeAnswer;
     const isTestMode = process.env.NODE_ENV === "test" || process.env.AGENDA_TEST_MODE === "1";
-    const enforceStrictChallenge = !isTestMode || req.headers["x-enforce-antibot"] === "true" || Boolean(botGuard.challengeToken);
+    const enforceTurnstile = !isTestMode || req.headers["x-enforce-turnstile"] === "true" || Boolean(turnstileToken);
+    const enforceLegacyMath = isTestMode && !enforceTurnstile && (req.headers["x-enforce-antibot"] === "true" || Boolean(challengeToken));
+    const enforceStrictChallenge = enforceTurnstile || enforceLegacyMath;
     for (const field of HONEYPOT_FIELD_NAMES) {
       const val = body[field] ?? botGuard[field];
       if (val !== void 0 && val !== null && String(val).trim() !== "") {
@@ -84177,7 +84430,7 @@ function antiBotGuard(options) {
         });
       }
     }
-    if (!isTestMode || req.headers["x-enforce-antibot"] === "true") {
+    if (!isTestMode || req.headers["x-enforce-antibot"] === "true" || req.headers["x-enforce-turnstile"] === "true") {
       if (!ua || SUSPICIOUS_BOT_UA_PATTERNS.some((re) => re.test(ua))) {
         await db.recordAuditLog(
           null,
@@ -84239,9 +84492,24 @@ function antiBotGuard(options) {
         });
       }
     }
-    const challengeToken = botGuard.challengeToken ?? body.challengeToken;
-    const challengeAnswer = botGuard.challengeAnswer ?? body.challengeAnswer;
-    if (enforceStrictChallenge) {
+    if (enforceTurnstile) {
+      const check2 = await verifyTurnstileToken(turnstileToken, ip);
+      if (!check2.valid) {
+        await db.recordAuditLog(
+          null,
+          null,
+          "SECURITY_TURNSTILE_FAILED",
+          { path: req.originalUrl, code: check2.code, errorCodes: check2.errorCodes },
+          ip
+        ).catch(() => {
+        });
+        return res.status(403).json({
+          success: false,
+          code: check2.code || "TURNSTILE_FAILED",
+          error: check2.error || "Falha na verifica\xE7\xE3o de seguran\xE7a (Cloudflare Turnstile)."
+        });
+      }
+    } else if (enforceLegacyMath) {
       const check2 = verifyBotChallenge(challengeToken, challengeAnswer, {
         enforceTiming: true,
         consumeNonce: true
@@ -86869,8 +87137,21 @@ router.put("/change-password", authMiddleware, async (req, res, next) => {
     const pool2 = getMySqlPool();
     if (pool2) {
       try {
-        await pool2.execute(`UPDATE User SET passwordHash = ?, updatedAt = NOW() WHERE id = ?`, [newHash, user.id]);
+        const [updateRes] = await pool2.execute(
+          `UPDATE User SET passwordHash = ?, updatedAt = NOW() WHERE id = ? OR LOWER(email) = LOWER(?)`,
+          [newHash, user.id, user.email]
+        );
+        if (!updateRes || Number(updateRes.affectedRows || 0) === 0) {
+          await pool2.execute(
+            `INSERT INTO User (id, name, email, passwordHash, active, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, 1, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE passwordHash = VALUES(passwordHash), updatedAt = NOW()`,
+            [user.id, user.name || "Usu\xE1rio", String(user.email).toLowerCase(), newHash]
+          );
+        }
+        invalidateQueryCache();
       } catch (e) {
+        console.warn("[Auth ChangePassword MySQL Warning]:", e);
       }
     }
     res.json({ success: true, message: "Senha alterada com sucesso!" });
