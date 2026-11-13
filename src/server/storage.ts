@@ -2468,7 +2468,7 @@ export const db = {
   async getSuggestedSlots(tenantId: string, professionalId: string, serviceId: string, requestedDateTime: Date): Promise<string[]> {
     const suggestions: string[] = [];
     const baseTime = requestedDateTime.getTime();
-    const offsetsMinutes = [30, 60, -60, 90, 120, 150, 180, 240];
+    const offsetsMinutes = [30, -30, 60, -60, 90, -90, 120, 150, 180];
     const rawApps = await this.getAppointments(tenantId);
     const now = new Date();
     const allApps = rawApps.filter(

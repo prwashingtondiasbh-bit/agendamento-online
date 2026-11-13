@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Appointment, Professional, Service, TimeBlock } from '../types';
 import { apiFetch } from '../App';
+import { ensureSlotInList, generateThirtyMinuteSlots } from '../utils/timeSlots';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -41,6 +42,9 @@ const BLOCK_TYPE_LABELS: Record<string, string> = {
   PERSONAL: 'Compromisso pessoal',
   EXCEPTION: 'Bloqueio excepcional',
 };
+
+const THIRTY_MIN_BLOCK_SLOTS = generateThirtyMinuteSlots('06:00', '23:30', true);
+const THIRTY_MIN_APPOINTMENT_SLOTS = generateThirtyMinuteSlots('07:00', '22:00', true);
 
 const ORIGIN_LABELS: Record<string, string> = {
   ONLINE: 'Portal Online',
@@ -950,21 +954,31 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                 <div className="grid grid-cols-2 sm:contents gap-2.5">
                   <div>
                     <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Início</label>
-                    <input
-                      type="time"
+                    <select
                       value={blockForm.startTime}
                       onChange={(e) => setBlockForm({ ...blockForm, startTime: e.target.value })}
                       className="w-full min-h-[42px] px-2.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs"
-                    />
+                    >
+                      {ensureSlotInList(THIRTY_MIN_BLOCK_SLOTS, blockForm.startTime).map((slot) => (
+                        <option key={slot} value={slot}>
+                          {slot}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Fim</label>
-                    <input
-                      type="time"
+                    <select
                       value={blockForm.endTime}
                       onChange={(e) => setBlockForm({ ...blockForm, endTime: e.target.value })}
                       className="w-full min-h-[42px] px-2.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs"
-                    />
+                    >
+                      {ensureSlotInList(THIRTY_MIN_BLOCK_SLOTS, blockForm.endTime).map((slot) => (
+                        <option key={slot} value={slot}>
+                          {slot}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -1088,13 +1102,18 @@ export const AppointmentsView: React.FC<AppointmentsViewProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Novo Horário</label>
-                  <input
-                    type="time"
+                  <select
                     required
                     value={editTime}
                     onChange={(e) => setEditTime(e.target.value)}
                     className="w-full min-h-[44px] px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm"
-                  />
+                  >
+                    {ensureSlotInList(THIRTY_MIN_APPOINTMENT_SLOTS, editTime).map((slot) => (
+                      <option key={slot} value={slot}>
+                        {slot}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

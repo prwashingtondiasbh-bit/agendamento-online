@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Client, Professional, Service } from '../types';
 import { X, Plus, Trash2, UserPlus, Check, Clock, AlertTriangle } from 'lucide-react';
+import { ensureSlotInList, generateThirtyMinuteSlots } from '../utils/timeSlots';
+
+const ADMIN_THIRTY_MIN_SLOTS = generateThirtyMinuteSlots('07:00', '22:00', true);
 
 interface NewAppointmentModalProps {
   isOpen: boolean;
@@ -341,13 +344,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             </div>
             <div>
               <label className="block text-xs font-semibold uppercase text-stone-500 mb-1">Horário</label>
-              <input
-                type="time"
+              <select
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
                 className="w-full min-h-[44px] px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm"
                 required
-              />
+              >
+                {ensureSlotInList(ADMIN_THIRTY_MIN_SLOTS, time).map((slot) => (
+                  <option key={slot} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

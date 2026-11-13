@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { generateThirtyMinuteSlots } from '../../utils/timeSlots';
 import {
   Calendar,
   Clock,
@@ -34,7 +35,7 @@ interface CustomerAppointmentsProps {
   onRefresh?: () => Promise<void> | void;
 }
 
-const AVAILABLE_HOURS = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+const DEFAULT_THIRTY_MIN_HOURS = generateThirtyMinuteSlots('08:00', '20:00');
 
 export const CustomerAppointments: React.FC<CustomerAppointmentsProps> = ({
   appointments,
@@ -68,6 +69,52 @@ export const CustomerAppointments: React.FC<CustomerAppointmentsProps> = ({
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [rescheduleError, setRescheduleError] = useState('');
+  const [rescheduleSlots, setRescheduleSlots] = useState<string[]>(DEFAULT_THIRTY_MIN_HOURS);
+  const [rescheduleOccupied, setRescheduleOccupied] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!rescheduleModalOpen || !selectedAppointment || !rescheduleDate) return;
+    let cancelled = false;
+    const tenantId = selectedAppointment.tenantId || business?.id || 'biz-1';
+    const serviceId = selectedAppointment.serviceId || selectedAppointment.service?.id || '';
+    const professionalId = selectedAppointment.professionalId || selectedAppointment.professional?.id || '';
+    if (!serviceId || !professionalId) return;
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('agenda_token') : null;
+    const headers = new Headers();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+      headers.set('x-session-token', token);
+    }
+
+    fetch(
+      `/api/v1/customer/available-slots?tenantId=${encodeURIComponent(tenantId)}&serviceId=${encodeURIComponent(serviceId)}&professionalId=${encodeURIComponent(professionalId)}&date=${encodeURIComponent(rescheduleDate)}`,
+      { headers, credentials: 'include' }
+    )
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled || !json?.success) return;
+        const occ: string[] = Array.isArray(json.data?.occupiedSlots)
+          ? json.data.occupiedSlots.map((o: any) => o.time)
+          : [];
+        const allTimes: string[] = Array.isArray(json.data?.slots)
+          ? json.data.slots.map((s: any) => s.time)
+          : DEFAULT_THIRTY_MIN_HOURS;
+        setRescheduleSlots(allTimes);
+        setRescheduleOccupied(occ);
+        setRescheduleTime((prev) => {
+          if (occ.includes(prev) || !allTimes.includes(prev)) {
+            return allTimes.find((h) => !occ.includes(h)) || prev;
+          }
+          return prev;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rescheduleModalOpen, selectedAppointment, rescheduleDate, business?.id]);
 
   const list = filterTab === 'upcoming' ? appointments.upcoming : appointments.past;
 
@@ -889,11 +936,14 @@ export const CustomerAppointments: React.FC<CustomerAppointmentsProps> = ({
                     onChange={(e) => setRescheduleTime(e.target.value)}
                     className="w-full px-3 py-2.5 min-h-[42px] bg-stone-50 border border-stone-200 rounded-xl"
                   >
-                    {AVAILABLE_HOURS.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
+                    {rescheduleSlots.map((h) => {
+                      const occ = rescheduleOccupied.includes(h);
+                      return (
+                        <option key={h} value={h} disabled={occ}>
+                          {h} {occ ? '— (Indisponível)' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>

@@ -21,6 +21,7 @@ import {
 import { PixCheckoutModal } from './PixCheckoutModal';
 import { updateDocumentSeo } from '../utils/seo';
 import { AntiBotChallenge, BotGuardPayload } from './auth/AntiBotChallenge';
+import { generateThirtyMinuteSlots } from '../utils/timeSlots';
 
 interface PublicBookingPageProps {
   slug: string;
@@ -64,6 +65,7 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
   const [acceptedPolicy, setAcceptedPolicy] = useState<boolean>(true);
 
   const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
+  const [serverSlotTimes, setServerSlotTimes] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState<string>('');
   const [createdAppointment, setCreatedAppointment] = useState<any>(null);
@@ -86,7 +88,16 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
     formRenderedAt: Date.now(),
   });
 
-  const availableHours = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+  const baseThirtyMinSlots = React.useMemo(
+    () =>
+      generateThirtyMinuteSlots(
+        establishmentData?.establishment?.openTime || '08:00',
+        establishmentData?.establishment?.closeTime || '20:00'
+      ),
+    [establishmentData?.establishment?.openTime, establishmentData?.establishment?.closeTime]
+  );
+
+  const availableHours = serverSlotTimes.length > 0 ? serverSlotTimes : baseThirtyMinSlots;
 
   // Load establishment by slug
   useEffect(() => {
@@ -199,11 +210,18 @@ export const PublicBookingPage: React.FC<PublicBookingPageProps> = ({
       .then((json) => {
         if (!cancelled && json?.success && Array.isArray(json.data?.occupiedSlots)) {
           const occ = json.data.occupiedSlots.map((o: any) => o.time);
+          const allTimes: string[] = Array.isArray(json.data?.slots)
+            ? json.data.slots.map((s: any) => s.time)
+            : baseThirtyMinSlots;
+          setServerSlotTimes(allTimes);
           setOccupiedSlots(occ);
-          if (occ.includes(time)) {
-            const firstFree = availableHours.find((h) => !occ.includes(h));
-            if (firstFree) setTime(firstFree);
-          }
+          setTime((prevTime) => {
+            if (occ.includes(prevTime) || !allTimes.includes(prevTime)) {
+              const firstFree = allTimes.find((h) => !occ.includes(h));
+              return firstFree || prevTime;
+            }
+            return prevTime;
+          });
         }
       })
       .catch(() => {});

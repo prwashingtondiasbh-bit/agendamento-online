@@ -12,6 +12,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { Service, Professional } from '../../types';
+import { generateThirtyMinuteSlots } from '../../utils/timeSlots';
 
 interface CustomerBookingModalProps {
   isOpen: boolean;
@@ -105,10 +106,20 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [serverOccupiedTimes, setServerOccupiedTimes] = useState<string[]>([]);
+  const [serverSlotTimes, setServerSlotTimes] = useState<string[]>([]);
 
   const selectedService = activeServices.find((s) => s.id === serviceId) || activeServices[0];
 
-  const availableHours = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+  const baseThirtyMinHours = React.useMemo(
+    () =>
+      generateThirtyMinuteSlots(
+        activeBusiness?.openTime || '08:00',
+        activeBusiness?.closeTime || '20:00'
+      ),
+    [activeBusiness?.openTime, activeBusiness?.closeTime]
+  );
+
+  const availableHours = serverSlotTimes.length > 0 ? serverSlotTimes : baseThirtyMinHours;
 
   useEffect(() => {
     if (!isOpen || !serviceId || !professionalId || !date || !selectedTenantId) return;
@@ -127,6 +138,9 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
       .then((json) => {
         if (!cancelled && json?.success && Array.isArray(json.data?.occupiedSlots)) {
           setServerOccupiedTimes(json.data.occupiedSlots.map((o: any) => o.time));
+          if (Array.isArray(json.data?.slots)) {
+            setServerSlotTimes(json.data.slots.map((s: any) => s.time));
+          }
         }
       })
       .catch(() => {});

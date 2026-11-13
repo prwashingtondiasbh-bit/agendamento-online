@@ -52167,7 +52167,7 @@ var init_storage = __esm({
       async getSuggestedSlots(tenantId, professionalId, serviceId, requestedDateTime) {
         const suggestions = [];
         const baseTime = requestedDateTime.getTime();
-        const offsetsMinutes = [30, 60, -60, 90, 120, 150, 180, 240];
+        const offsetsMinutes = [30, -30, 60, -60, 90, -90, 120, 150, 180];
         const rawApps = await this.getAppointments(tenantId);
         const now = /* @__PURE__ */ new Date();
         const allApps = rawApps.filter(
