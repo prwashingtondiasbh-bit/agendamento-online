@@ -11,6 +11,14 @@ if (!process.env.DATABASE_URL && process.env.NODE_ENV !== 'test' && process.env.
     'mysql://u117523286_Skayiuoep:8cJL%3A%600KI%7CP8jFg7%60Q%26%2F@srv1661.hstgr.io:3306/u117523286_agendOnline';
 }
 
+if (!process.env.TURNSTILE_SECRET_KEY && process.env.NODE_ENV !== 'test' && process.env.AGENDA_TEST_MODE !== '1') {
+  process.env.TURNSTILE_SECRET_KEY = '0x4AAAAAAF-9lfVoUvvu6KKMb14Juz3ZcqE';
+}
+
+if (!process.env.VITE_TURNSTILE_SITE_KEY) {
+  process.env.VITE_TURNSTILE_SITE_KEY = '0x4AAAAAAF-9lcvfQpiICFeY';
+}
+
 // Normalize environment variables that may have been pasted with literal surrounding quotes
 for (const [key, val] of Object.entries(process.env)) {
   if (typeof val === 'string' && ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))) {
